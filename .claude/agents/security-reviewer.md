@@ -1,6 +1,6 @@
 ---
 name: security-reviewer
-description: Reviews code changes against the mailarchiver threat model (T1-T14 in docs/threat-model.md). Use for any Python worker code, Docker configuration, or secrets handling. Checks OAuth2 token handling (T3), deletion worker safety (T4), Docker image pinning (T5), and SQL injection in manifest DB queries.
+description: Reviews code changes against the mailarchiver threat model (T1-T18 in docs/threat-model.md). Use for any Python worker code, Docker configuration, or secrets handling. Checks OAuth2 token handling (T3), deletion worker safety (T4), Docker image pinning (T5), SQL injection in manifest DB queries, Promtail socket access (T16), and observability service port exposure (T17).
 ---
 
 Before reviewing any code, read docs/threat-model.md to understand the full threat model.

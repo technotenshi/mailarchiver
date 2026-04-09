@@ -33,7 +33,7 @@ Design documentation phase complete. No implementation exists yet. All architect
 | `docs/tech-stack.md` | Container stack decisions, Docker Compose layout, network segmentation, image pinning |
 | `docs/observability.md` | Metrics, alerts, Grafana/Loki/Prometheus/Alertmanager, external heartbeat |
 | `docs/cicd.md` | GitHub Actions pipelines, image build/push, deploy procedure |
-| `docs/threat-model.md` | 14 threats with mitigations and status; security gaps summary |
+| `docs/threat-model.md` | 18 threats with mitigations and status; security gaps summary |
 | `docs/recovery.md` | Disaster recovery procedure, RPO/RTO |
 | `docs/operations.md` | Routine operations: add account, rotate credentials, health check, Tang key rotation |
 

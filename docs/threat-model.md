@@ -139,8 +139,8 @@ Ranked by impact of loss or compromise:
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| **Pin all off-the-shelf images by digest** (`image@sha256:...`), not by tag | Critical | **Not yet defined — gap** |
-| **Trivy scan off-the-shelf images** in CI alongside custom images | High | Currently CI only scans custom images — extend |
+| **Pin all off-the-shelf images by digest** (`image@sha256:...`), not by tag | Critical | Defined in docs/tech-stack.md §Image digest pinning |
+| **Trivy scan off-the-shelf images** in CI alongside custom images | High | Defined in docs/cicd.md §build-and-scan |
 | Use Renovate/Dependabot to track digest updates (opens PR when upstream digest changes) | High | Defined in cicd.md — extend to digest pinning |
 | Prefer images from official namespaces (e.g. `prom/prometheus`, `grafana/grafana`) over community variants | Medium | Implementation guidance |
 | Docker Content Trust / Cosign signature verification for custom images | Medium | Not yet defined |
@@ -155,10 +155,10 @@ Ranked by impact of loss or compromise:
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| **Pin all GitHub Actions to commit SHA**, not tag (`actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683` not `@v4`) | Critical | **Not yet defined — gap** |
-| Protect `main` branch: require PR + CI pass; no direct push | High | Not yet defined |
-| Require PR review before merge to main | High | Not yet defined |
-| Workflow permissions: set `permissions: read-all` at top level; grant write only where needed | High | Not yet defined |
+| **Pin all GitHub Actions to commit SHA**, not tag (`actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683` not `@v4`) | Critical | Defined in docs/cicd.md §Pipeline Security Requirements |
+| Protect `main` branch: require PR + CI pass; no direct push | High | Defined in docs/cicd.md §Branch protection on main |
+| Require PR review before merge to main | High | Defined in docs/cicd.md §Branch protection on main |
+| Workflow permissions: set `permissions: read-all` at top level; grant write only where needed | High | Defined in docs/cicd.md §Workflow permissions |
 | `VPS_SSH_KEY` scoped to least-privilege deploy user (docker only, no sudo) | High | Defined in cicd.md |
 | Audit third-party actions; prefer official GitHub actions or well-audited equivalents | Medium | Not yet defined |
 
@@ -189,7 +189,7 @@ Ranked by impact of loss or compromise:
 | Mitigation | Severity | Status |
 |---|---|---|
 | rclone crypt AES-256-CTR already in design | — | Defined in architecture.md |
-| **B2/R2 API keys scoped to the specific backup bucket only** (not account-level) — limits blast radius if API key is leaked | High | **Not yet defined — gap** |
+| **B2/R2 API keys scoped to the specific backup bucket only** (not account-level) — limits blast radius if API key is leaked | High | Defined in docs/architecture.md §1 |
 | Enable bucket-level access policies: block public access, no pre-signed URL generation | High | Not yet defined |
 | Enable object versioning (already required for accidental deletion protection — see resilience doc) | High | Defined in architecture.md |
 | Consider B2/R2 Object Lock (WORM) for additional tamper protection | Low | Not yet defined |
@@ -219,9 +219,9 @@ Ranked by impact of loss or compromise:
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| **Define two Docker networks**: `app-net` (application containers) and `obs-net` (observability containers) | High | **Not yet defined — gap** |
-| Worker attached to both networks (exposes `/metrics` to `obs-net`; accesses Maildir on `app-net`) | High | Design required |
-| Pushgateway on `app-net` only (mbsync and rclone push to it); Prometheus scrapes it from `obs-net` via a bridge | Medium | Design required |
+| **Define two Docker networks**: `app-net` (application containers) and `obs-net` (observability containers) | High | Defined in docs/tech-stack.md §Docker network segmentation |
+| Worker attached to both networks (exposes `/metrics` to `obs-net`; accesses Maildir on `app-net`) | High | Defined in docs/tech-stack.md §Docker network segmentation |
+| Pushgateway bridges both networks — mbsync and rclone push to it on `app-net`; Prometheus scrapes it from `obs-net` | Medium | Defined in docs/tech-stack.md §Docker network segmentation |
 | Promtail requires Docker socket access (host bind mount) — this is unavoidable; review what other containers mount | Medium | Not yet defined |
 
 **Proposed network layout:**
@@ -252,9 +252,9 @@ both:      worker (metrics bridge)
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| Grafana: enable authentication (username/password minimum; Tailscale SSO if available) | High | **Not yet defined** |
-| Grafana: disable anonymous access (`allow_sign_up = false`, `allow_embedding = false`) | High | Not yet defined |
-| Expose Grafana only on Tailscale network (not on public VPS IP) | High | Not yet defined — consistent with Dovecot scope |
+| Grafana: enable authentication (username/password minimum; Tailscale SSO if available) | High | Defined in docs/observability.md §Access Controls |
+| Grafana: disable anonymous access (`allow_sign_up = false`, `allow_embedding = false`) | High | Defined in docs/observability.md §Access Controls |
+| Expose Grafana only on Tailscale network (not on public VPS IP) | High | Defined in docs/observability.md §Access Controls |
 
 ---
 
@@ -279,9 +279,67 @@ both:      worker (metrics bridge)
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| Define Docker resource limits (`mem_limit`, `cpus`) per container in Compose | Medium | **Not yet defined** |
+| Define Docker resource limits (`mem_limit`, `cpus`) per container in Compose | Medium | Defined in docs/tech-stack.md §Container resource limits |
 | Loki and Prometheus retention limits prevent unbounded disk growth | Medium | Partially defined (retention periods deferred) |
 | `MaildirDiskPressure` alert already covers disk exhaustion | — | Defined in observability.md |
+
+---
+
+### T15 — Tang Server Security and Availability
+
+**Impact:** Tang (secondary VPS) is a hard dependency for VPS startup — gocryptfs cannot mount without a successful Clevis/Tang ECDH exchange. If Tang's ECDH private keys are exfiltrated alongside the `tang-binding.jwe` file from the primary VPS, the gocryptfs passphrase is derivable offline. If Tang is taken down, the primary VPS cannot restart until the manual fallback is invoked.
+
+**Vectors:** Tang VPS not hardened (same SSH brute-force and exploitation vectors as T1); ECDH private key extracted from Tang disk + JWE binding stolen from primary VPS → passphrase recoverable without Tang online; sustained DoS or cloud provider failure for the Tang VPS blocks primary VPS restarts; rogue Tailscale peer (see T7) reaching Tang's default port.
+
+| Mitigation | Severity | Status |
+|---|---|---|
+| Apply the same VPS hardening baseline to Tang server: SSH key-only, fail2ban, unattended security upgrades | High | Not yet defined |
+| Tang must not be reachable from the public internet — bind to Tailscale interface only | High | Not yet defined |
+| Tailscale ACLs must restrict which nodes can reach Tang's port — primary VPS only | High | Not yet defined — gap |
+| Monitor Tang server uptime independently; alert if unreachable before a planned VPS restart | Medium | Not yet defined |
+| Fallback procedure for Tang unavailability (age-encrypted passphrase escrow) | Medium | Defined in docs/architecture.md §7 + docs/operations.md §7 |
+
+---
+
+### T16 — Promtail Docker Socket Privilege Escalation
+
+**Impact:** Promtail requires a bind mount of `/var/run/docker.sock`. A compromised Promtail container has host-level Docker access — it can list, inspect, exec into, and read the filesystems of all running containers including the worker and Dovecot. This bypasses the `app-net`/`obs-net` network segmentation (T10) entirely.
+
+**Vectors:** Compromised Promtail image (supply chain — see T5); unpatched CVE in Promtail exploited from `obs-net`; Docker socket used to exec into worker container and read Maildir or manifest DB.
+
+| Mitigation | Severity | Status |
+|---|---|---|
+| Pin Promtail image by digest; include in Trivy CI scan — extends T5 mitigations | Critical | Defined in docs/tech-stack.md §Image digest pinning + docs/cicd.md §build-and-scan |
+| Use a Docker socket proxy (e.g. `tecnativa/docker-socket-proxy`) in front of `/var/run/docker.sock` — restrict Promtail to log-read operations only; deny exec, start, stop, and container inspection | High | Not yet defined — gap |
+| Audit Promtail container capabilities: drop all unnecessary Linux capabilities (`cap_drop: ALL`) | Medium | Not yet defined |
+
+---
+
+### T17 — Observability Services Inadvertent Internet Exposure
+
+**Impact:** Prometheus, Loki, Alertmanager, and Pushgateway contain sensitive operational data. Alertmanager's configuration includes SMTP credentials and webhook URLs stored as Docker secrets. Loki stores structured logs containing email account names and message IDs. If any service is accidentally port-mapped to `0.0.0.0` on the VPS host, it is reachable from the public internet.
+
+**Vectors:** Incorrect Docker Compose port-mapping syntax (`- "9090:9090"` instead of no host mapping); operator adds a temporary debug port-forward and omits removing it; VPS host firewall not set to default-deny.
+
+| Mitigation | Severity | Status |
+|---|---|---|
+| Prometheus, Loki, Alertmanager, and Pushgateway must not be port-mapped to the VPS host; Grafana is the sole operator-facing ingress | Critical | Defined in docs/observability.md §Access Controls |
+| VPS host firewall (ufw/iptables): default-deny inbound; allow only SSH (non-standard port) and IMAPS/993 from Tailscale interface | High | Not yet defined — gap |
+| CI `validate-configs` job: lint Compose file for `0.0.0.0` port bindings on observability service ports | Medium | Not yet defined |
+
+---
+
+### T18 — Recovery Procedure Plaintext Exposure
+
+**Impact:** The recovery runbook (`docs/recovery.md`) restores the Maildir from rclone without first initializing and mounting gocryptfs on the new VPS. If followed verbatim, `rclone copy` writes decrypted email to an unencrypted disk path, nullifying the at-rest encryption guarantee of T2 for the duration of the recovery operation.
+
+**Vectors:** Operator follows `docs/recovery.md` under time pressure without noticing the missing gocryptfs init step; Tang is reachable but the gocryptfs ciphertext volume has not yet been initialized on the new VPS; rclone restore runs before the gocryptfs mount is in place.
+
+| Mitigation | Severity | Status |
+|---|---|---|
+| Recovery runbook must be updated: initialize gocryptfs ciphertext volume (`gocryptfs -init`) and mount it before running `rclone copy` to restore the Maildir | Critical | Not yet defined — gap |
+| Add explicit pre-condition check to recovery procedure: verify gocryptfs is mounted at the target path before proceeding to rclone restore | High | Not yet defined |
+| Recovery procedure drill should verify gocryptfs is mounted and restored data lands on the encrypted filesystem | Medium | Not yet defined |
 
 ---
 
@@ -289,18 +347,12 @@ both:      worker (metrics bridge)
 
 | Gap | Where to address | Severity |
 |---|---|---|
-| LUKS encryption for VPS data volume | architecture.md §6 + ops runbook | High |
-| Pin all Docker images by digest | tech-stack.md + cicd.md | Critical |
-| Extend Trivy scan to off-the-shelf images | cicd.md | High |
-| Pin GitHub Actions by commit SHA | cicd.md | Critical |
-| Protect `main` branch in GitHub | cicd.md | High |
-| Tailscale ACLs (restrict Dovecot access to specific nodes) | architecture.md §6 | High |
-| B2/R2 API keys scoped to bucket, not account | architecture.md §1 | High |
-| Local backup disk encryption | recovery.md + architecture.md | High |
-| Docker network segmentation (`app-net` / `obs-net`) | tech-stack.md | High |
-| Grafana authentication | observability.md | High |
-| Secret rotation cadences | architecture.md §5 | Medium |
-| Container resource limits | tech-stack.md | Medium |
+| Tailscale ACLs (restrict Dovecot access and Tang port to specific nodes) | docs/architecture.md §6 | High |
+| Local backup disk encryption | docs/recovery.md + docs/architecture.md | High |
+| Tang server hardening and Tailscale ACL for Tang port (T15) | docs/operations.md + docs/architecture.md | High |
+| Docker socket proxy for Promtail (T16) | docs/tech-stack.md | High |
+| VPS host firewall default-deny; observability services off public interface (T17) | docs/architecture.md §6 | High |
+| gocryptfs init step in recovery procedure before rclone restore (T18) | docs/recovery.md | Critical |
 
 ---
 
