@@ -28,7 +28,7 @@ Design documentation phase complete. No implementation exists yet. All architect
 
 | Doc | Covers |
 |---|---|
-| `docs/concept.md` | Original Mermaid architecture diagram — **read-only, do not modify** |
+| `docs/concept.md` | Mermaid architecture diagram — update when architecture decisions change |
 | `docs/architecture.md` | Encryption, deletion worker schema + algorithm, retention policy, error handling, auth, resilience, gocryptfs startup |
 | `docs/tech-stack.md` | Container stack decisions, Docker Compose layout, network segmentation, image pinning |
 | `docs/observability.md` | Metrics, alerts, Grafana/Loki/Prometheus/Alertmanager, external heartbeat |

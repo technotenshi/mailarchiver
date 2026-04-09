@@ -52,6 +52,7 @@ All architectural decisions are documented in `docs/`. The next phase is impleme
 
 | Doc | Covers |
 |---|---|
+| [docs/concept.md](docs/concept.md) | Mermaid architecture diagram |
 | [docs/architecture.md](docs/architecture.md) | Full system design: encryption, deletion worker algorithm, retention policy, resilience, gocryptfs startup sequence |
 | [docs/tech-stack.md](docs/tech-stack.md) | Container stack, Docker Compose layout, network segmentation |
 | [docs/observability.md](docs/observability.md) | Metrics, alerts, dashboards, external heartbeat |
