@@ -1,3 +1,4 @@
+```mermaid
 flowchart LR
     subgraph Providers[Email Providers]
         G2[Gmail]
@@ -41,3 +42,4 @@ flowchart LR
     B2 --> Q
     R2 --> Q
     Q -->|Delete provider copy only after retention + backup checks| Providers
+```
