@@ -194,7 +194,7 @@ flowchart LR
 | **Define Tailscale ACL matrix**: `tag:mail-client -> tag:primary-vps:993`, `tag:admin-device -> tag:primary-vps:3000`, `tag:backup-server -> tag:primary-vps:SSH_PORT`, `tag:admin-device -> tag:backup-server:SSH_PORT`; deny other Tailscale service access by default | High | Defined in docs/architecture.md §Tailscale ACL matrix |
 | Enable Tailscale device approval: new devices require explicit admin approval before joining tailnet | High | Not yet defined |
 | Enable Tailscale MFA on the tailnet admin account | High | Not yet defined |
-| Dovecot authentication provides a second factor for IMAP access even for authorized Tailscale peers | Medium | Method TBD — see architecture.md |
+| Dovecot authentication provides a second layer of access control for IMAP access even for authorized Tailscale peers | Medium | Defined in docs/architecture.md §Dovecot network exposure |
 | Monitor Tailscale admin console for unexpected nodes | Low | Not yet defined |
 
 ---

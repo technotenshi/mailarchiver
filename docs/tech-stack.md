@@ -24,6 +24,12 @@
 
 ---
 
+### Dovecot authentication
+
+Dovecot login is delegated to an external OIDC/OAuth2 provider via XOAUTH2/OAUTHBEARER. Mail clients must support OAuth2-capable IMAP login; Thunderbird is the reference client for validation. See `docs/architecture.md §Dovecot network exposure` for the full decision and deferred model work.
+
+---
+
 ## Container Layout
 
 ```

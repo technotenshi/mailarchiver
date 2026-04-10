@@ -284,7 +284,9 @@ Dovecot is a long-running daemon with a network-accessible IMAP port. The follow
 - **TLS required** — Dovecot must terminate IMAPS (port 993) with a valid certificate. Plaintext IMAP (port 143) must not be accessible outside localhost.
 - **Access scope** — Dovecot is accessible only to Tailscale network peers. **Tailscale ACLs must explicitly restrict which nodes can reach VPS port 993** — not all tailnet peers, only designated mail client devices.
 - **Certificate source** — Tailscale provides per-machine TLS certificates via its ACME integration; this is the natural fit for a Tailscale-scoped deployment.
-- **Dovecot authentication** — method to be defined at implementation time (passwd-file is the minimal self-contained option).
+- **Dovecot login** — Dovecot delegates login to an external OIDC/OAuth2 provider. IMAP clients authenticate using XOAUTH2/OAUTHBEARER, not `passwd-file`, PAM, or host/system-user auth.
+- **Identity model** — each human user logs in with their own IdP identity; Dovecot does not use a single shared archive credential.
+- **Deferred model work** — this decision defines only how users log in. Archive ownership, per-user visibility, authorization mapping, and writable IMAP behavior remain separate deferred design items.
 
 ### Tailscale ACL matrix
 
@@ -491,7 +493,9 @@ The systemd ordering guarantees that if `gocryptfs-mount.service` fails, Docker 
 
 ## Open Decisions (deferred)
 
-- **Dovecot authentication method** — passwd-file vs PAM vs other; to be decided at implementation time.
+- **Archive ownership / per-user visibility model** — docs do not yet define which archive data a logged-in user can access or whether access is exclusive or shared.
+- **Dovecot authorization source and mapping model** — docs do not yet define whether archive access comes from local config, local DB, IdP claims/groups, or a hybrid model.
+- **Writable IMAP semantics** — moves, deletes, appends, folder creation, and flag changes are not yet reconciled with the manifest, backup, and deletion-worker model.
 
 ## Resolved Decisions
 

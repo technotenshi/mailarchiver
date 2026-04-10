@@ -27,7 +27,7 @@ These items are security gaps or procedural errors that could cause data loss or
 |---|---|---|---|---|---|
 | H1 | Tang server VPS hardening baseline not defined — same requirements as primary VPS (SSH key-only, fail2ban, unattended-upgrades) but no doc covers Tang | `docs/threat-model.md §T15` | T15 | Resolved | `docs/architecture.md §Tang VPS hardening baseline` |
 | H2 | Local backup disk encryption decision deferred — no chosen at-rest encryption model for the rsnapshot target | `docs/architecture.md §Local rsnapshot backup` | T9 | Resolved | `docs/architecture.md §Local rsnapshot backup` |
-| H3 | Dovecot authentication method explicitly deferred (passwd-file vs PAM) — must be decided before Iteration 2 Track A begins | `docs/architecture.md §Open Decisions` | T1 | Open | |
+| H3 | Dovecot authentication method explicitly deferred (passwd-file vs PAM) — standardized on external OIDC/OAuth2 via XOAUTH2/OAUTHBEARER | `docs/architecture.md §Dovecot network exposure` | T1 | Resolved | `docs/tech-stack.md §Dovecot authentication` |
 | H4 | SSH hardening specifics not defined — non-standard port value and fail2ban config thresholds are unspecified; "Not yet defined" in threat model | `docs/threat-model.md §T1` | T1 | Open | |
 | H5 | Tailscale device approval and tailnet admin MFA — both listed as "Not yet defined" | `docs/threat-model.md §T7` | T7 | Open | |
 | H6 | OAuth2 token revocation procedure per provider not documented — no runbook for revoking a leaked Gmail or Outlook token | `docs/threat-model.md §T3` | T3 | Open | |
@@ -36,6 +36,8 @@ These items are security gaps or procedural errors that could cause data loss or
 | H9 | CI `validate-configs` job does not lint Compose file for `0.0.0.0` port bindings on observability service ports — currently only checks YAML validity | `docs/cicd.md §validate-configs` | T17 | Open | |
 | H10 | Alloy container Linux capabilities not specified — `cap_drop: ALL` should be set but is absent from docs | `docs/threat-model.md §T16` | T16 | Open | |
 | H11 | Promtail reached end-of-life on March 2, 2026 — replaced with Grafana Alloy (official successor) across all docs | `docs/observability.md §Stack Decision` | T16 | Resolved | `docs/observability.md`, `docs/tech-stack.md`, `docs/threat-model.md` |
+| H12 | Multi-user archive authorization model undefined — each logged-in user has their own Dovecot identity, but docs do not yet define which provider-account namespaces they can access, whether access is exclusive or shared, or how that authorization is enforced | `docs/architecture.md §Open Decisions` | T7 | Open | |
+| H13 | Writable IMAP/archive mutation semantics undefined — moves, deletes, appends, folder creation, and flag changes are not reconciled with `provider_copies.maildir_path`, backups, or deletion-worker assumptions | `docs/architecture.md §Open Decisions` | T4 | Open | |
 
 ---
 
@@ -57,6 +59,9 @@ These items are security gaps or procedural errors that could cause data loss or
 | M12 | Third-party GitHub Actions audit process: "Not yet defined" | `docs/threat-model.md §T6` | Open | |
 | M13 | Backup-server rsnapshot path permissions not defined — ciphertext directory and plaintext rsnapshot target should be restricted to a dedicated rsnapshot user/service account | `docs/threat-model.md §T9` | Open | |
 | M14 | Backup-server host access policy not fully defined — T9 requires Tailscale-scoped administration, but no dedicated backup-server exposure/firewall baseline is documented | `docs/threat-model.md §T9` | Open | |
+| M15 | Dovecot authorization source and mapping store undefined — docs do not choose local config, local DB, IdP claims/groups, or a hybrid model for per-user archive access | `docs/architecture.md §Open Decisions` | Open | |
+| M16 | User onboarding / provisioning procedure for Dovecot OIDC logins not documented — creation of users in the IdP, client setup expectations, and Dovecot-side registration/provisioning flow remain undefined | `docs/architecture.md §Dovecot network exposure` | Open | |
+| M17 | OIDC provider integration specifics undefined — provider selection, required claims, client registration metadata, and Dovecot-side OAuth config are not yet documented | `docs/architecture.md §Dovecot network exposure` | Open | |
 
 ---
 

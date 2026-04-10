@@ -129,7 +129,7 @@ See `docs/cicd.md` for pipeline design.
 | # | Task | Done when | Status |
 |---|---|---|---|
 | 4.1 | Dovecot configured for Maildir storage with IMAPS/993 TLS using a Tailscale-issued certificate | `openssl s_client -connect <host>:993` shows a valid cert; plaintext port 143 refused | Pending |
-| 4.2 | Dovecot authentication working with at least one mail user | Mail client (e.g., Thunderbird) authenticates successfully and can browse archived messages | Pending |
+| 4.2 | Dovecot OAuth2/XOAUTH2 login working for at least one user (requires M17 resolved) | Mail client (e.g., Thunderbird) completes XOAUTH2/OAUTHBEARER login to Dovecot using external IdP credentials and can browse archived messages | Pending |
 | 4.3 | Tailscale ACL restricts Dovecot port 993 to designated mail client devices only | Connection from a `tag:mail-client` peer succeeds; connection from a non-mail-client Tailscale peer is refused | Pending |
 
 See `docs/architecture.md §6` for Dovecot TLS, ACL, and authentication requirements.
