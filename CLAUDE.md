@@ -36,12 +36,16 @@ Design documentation phase complete. No implementation exists yet. All architect
 | `docs/threat-model.md` | 18 threats with mitigations and status; security gaps summary |
 | `docs/recovery.md` | Disaster recovery procedure, RPO/RTO |
 | `docs/operations.md` | Routine operations: add account, rotate credentials, health check, Tang key rotation |
+| `docs/implementation.md` | 4-iteration implementation plan with per-task acceptance criteria |
+| `docs/definition-of-ready.md` | Checklist: preconditions any task must meet before development starts |
+| `docs/definition-of-done.md` | Checklist: criteria any task must meet to be considered done |
+| `TODOs.md` | Living tracker of undefined/ambiguous/gap items across all docs; update when gaps are resolved |
 
 ## Claude Code Automations
 
 | Type | File | Purpose |
 |---|---|---|
-| Agent | `.claude/agents/security-reviewer.md` | Reviews code against T1–T14 threat model |
+| Agent | `.claude/agents/security-reviewer.md` | Reviews code against T1–T18 threat model |
 | Agent | `.claude/agents/doc-consistency-checker.md` | Validates cross-references, status vocab, alert names |
 | Skill | `.claude/skills/doc-decision/` | Claude-only: conventions for recording decisions |
 | Skill | `.claude/skills/threat-check/` | Evaluates a proposed change against the threat model |
@@ -54,4 +58,4 @@ Design documentation phase complete. No implementation exists yet. All architect
 - Section headers: `## N. Title` (numbered) for top-level, `### Title` for subsections
 - Cross-references: `docs/X.md §N` (e.g. `docs/architecture.md §7`)
 - Decision tables: columns `| Mitigation | Severity | Status |`; status values: `Not yet defined`, `Not yet defined — gap`, `Defined in docs/X.md §N`
-- ASCII diagrams for architecture visuals; Markdown tables for decisions
+- Mermaid or ASCII diagrams for architecture visuals; Markdown tables for decisions

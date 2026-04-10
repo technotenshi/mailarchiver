@@ -57,7 +57,8 @@ All architectural decisions are documented in `docs/`. The next phase is impleme
 | [docs/tech-stack.md](docs/tech-stack.md) | Container stack, Docker Compose layout, network segmentation |
 | [docs/observability.md](docs/observability.md) | Metrics, alerts, dashboards, external heartbeat |
 | [docs/cicd.md](docs/cicd.md) | GitHub Actions pipelines, image publishing, deploy procedure |
-| [docs/threat-model.md](docs/threat-model.md) | 14 threats with mitigations and security gaps |
+| [docs/threat-model.md](docs/threat-model.md) | 18 threats with mitigations and security gaps |
+| [docs/implementation.md](docs/implementation.md) | 4-iteration implementation plan with per-task acceptance criteria |
 | [docs/recovery.md](docs/recovery.md) | Disaster recovery procedure, RPO/RTO |
 | [docs/operations.md](docs/operations.md) | Adding accounts, rotating credentials, Tang key rotation |
 
