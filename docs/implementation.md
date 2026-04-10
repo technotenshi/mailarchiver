@@ -15,7 +15,7 @@ CI/CD and observability are **not separate phases** — they are standing tracks
 
 ## Parallel Track Diagram
 
-```mermaid
+```
 Iteration 1 ── "Secure Vault + First Ingest" ────────────────────────────────────
   Track A │ Infrastructure (1.1–1.5)               ← must finish before Track B
   Track B │ Bootstrap + Ingest (2.1–2.3, 3.1–3.4)  ← starts after Track A
