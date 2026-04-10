@@ -6,6 +6,8 @@ Guidance for coding agents working in this repository.
 
 **mailarchiver** is a self-hosted email archiving system. It pulls mail from multiple providers into a central Maildir archive, serves that archive back over IMAP, maintains encrypted backup copies, and only deletes provider-side mail after retention and backup-verification checks succeed.
 
+The current documented direction is a multi-user login model: Dovecot login is delegated to an external OIDC/OAuth2 provider, and each human user authenticates with their own identity over OAuth-capable IMAP. The broader archive authorization and writable-IMAP model is still intentionally deferred.
+
 The current architecture is documented, but implementation has **not** started yet. This repository is still primarily a design and execution-planning repo.
 
 ## Current State
@@ -21,12 +23,19 @@ The system is designed around these major components:
 
 1. `mbsync` / isync for ingest from Gmail, Outlook, Yahoo, and other providers
 2. Maildir on a primary VPS as the permanent archive
-3. Dovecot serving the archive over IMAPS to authorized Tailscale peers
-4. Local rsnapshot backup on a separate local server over Tailscale
+3. Dovecot serving the archive over IMAPS to authorized Tailscale peers, with per-user OIDC/OAuth2 login via XOAUTH2/OAUTHBEARER
+4. Local rsnapshot backup on a separate local server over Tailscale, stored only inside its own gocryptfs-encrypted target
 5. Offsite encrypted backups to Backblaze B2 and Cloudflare R2
 6. A Python deletion worker with a SQLite manifest DB gating provider-side deletion
 7. Observability via Prometheus, Loki, Grafana, Alertmanager, Grafana Alloy, Docker socket proxy, Pushgateway, and Node Exporter
-8. At-rest encryption via gocryptfs + Clevis/Tang, with Tang hosted on a secondary VPS
+8. At-rest encryption via gocryptfs + Clevis/Tang, with distinct bindings and escrow records for the primary VPS and backup server, and Tang hosted on a secondary VPS
+
+## Current Design Boundaries
+
+- Dovecot login is defined: external OIDC/OAuth2, IMAP via XOAUTH2/OAUTHBEARER, one identity per human user
+- Dovecot archive authorization is not yet defined: do not invent per-user namespace visibility, ownership, or sharing rules unless the task explicitly adds them
+- Writable IMAP semantics are not yet defined: do not assume deletes, moves, appends, folder creation, or flag changes are already reconciled with the manifest, backups, or deletion worker
+- Tang clients are limited to the primary VPS and backup server; keep any new Tang-related guidance consistent with that ACL model
 
 ## Documentation Map
 
@@ -46,7 +55,7 @@ Read the relevant docs before making changes:
 | `docs/implementation.md` | Iteration plan and task acceptance criteria |
 | `docs/definition-of-ready.md` | Preconditions before starting a task |
 | `docs/definition-of-done.md` | Requirements before marking a task done |
-| `TODOs.md` | Gap tracker; update when a gap is resolved or narrowed |
+| `TODOs.md` | Gap tracker; move items to `In Progress` during implementation, and only mark `Resolved` after user review |
 
 ## Working Rules
 
@@ -65,13 +74,13 @@ When resolving a gap or changing a design decision, check whether the change als
 
 ### 2. Keep status bookkeeping consistent
 
-If you resolve a documented gap:
+If you implement a documented gap or design decision:
 
 - update the relevant design doc with the actual decision
 - update any threat-model mitigation row from `Not yet defined` / `Not yet defined — gap` to `Defined in docs/X.md §N` when appropriate
-- update `TODOs.md` status to `Resolved`
-- populate `Resolved in`
-- update the "Summary: Gaps Requiring New Decisions" table in `docs/threat-model.md` if the resolved item appears there
+- update `TODOs.md` status to `In Progress` while the change is awaiting review
+- only after explicit user review/approval: update `TODOs.md` status to `Resolved` and populate `Resolved in`
+- update the "Summary: Gaps Requiring New Decisions" table in `docs/threat-model.md` when an item is actually resolved or its remaining scope is narrowed
 
 Do not mark follow-up items resolved unless the new text actually closes them.
 
@@ -86,6 +95,10 @@ These files are part of the repo contract and should guide both planning and exe
 ### 4. Preserve existing decisions
 
 Do not casually override existing architectural choices. If you believe a prior decision should change, update all affected docs and clearly reflect the new state in the threat model and TODO tracker.
+
+### 5. User direction overrides stale docs
+
+If the user changes a requirement, treat that instruction as the new source of truth. Update the docs to match the user’s decision rather than arguing from older repository text.
 
 ## Local Agents and Skills
 

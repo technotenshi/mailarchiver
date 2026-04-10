@@ -107,11 +107,11 @@ flowchart LR
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| gocryptfs AES-256-GCM on `/maildir` and `/manifest-db` — ciphertext at rest, decrypted only while VPS is running | High | **Defined in architecture.md §7** |
-| Tang server on secondary VPS — passphrase derived via JOSE ECDH; never stored on primary disk; never transmitted in plaintext | High | **Defined in architecture.md §7** |
+| gocryptfs AES-256-GCM on `/maildir` and `/manifest-db` — ciphertext at rest, decrypted only while VPS is running | High | Defined in architecture.md §7 |
+| Tang server on secondary VPS — passphrase derived via JOSE ECDH; never stored on primary disk; never transmitted in plaintext | High | Defined in architecture.md §7 |
 | Per-file random IVs in gocryptfs — file-level isolation; compromise of one file's ciphertext does not expose key material for others | Medium | Inherent to gocryptfs |
-| File name encryption enabled — leaks no folder/account structure at filesystem level | Medium | **Defined in architecture.md §7** |
-| Fallback binding: age-encrypted passphrase escrowed in password manager (manual mount if Tang unreachable) | Medium | **Defined in architecture.md §7** |
+| File name encryption enabled — leaks no folder/account structure at filesystem level | Medium | Defined in architecture.md §7 |
+| Fallback binding: age-encrypted passphrase escrowed in password manager (manual mount if Tang unreachable) | Medium | Defined in architecture.md §7 |
 | Local rsnapshot copy: gocryptfs on backup server with separate Tang binding and fallback escrow | Medium | Defined in docs/architecture.md §Local rsnapshot backup |
 
 **Residual risk:** A live VPS compromise (attacker has shell) still has access to the mounted plaintext. gocryptfs is a disk-image threat mitigator, not a live-compromise mitigator. VPS hardening (T1) remains the primary defense against live access.

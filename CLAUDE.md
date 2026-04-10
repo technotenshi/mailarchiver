@@ -18,7 +18,7 @@ The system has five layers:
 
 A **deletion worker** gates removal of email from provider accounts on successful retention checks and confirmed backup presence across all copies.
 
-Key technical decisions: gocryptfs + Clevis/Tang for at-rest encryption; SQLite manifest DB (three-table schema); Prometheus + Loki + Grafana observability stack; Docker Compose v2 on a single VPS.
+Key technical decisions: gocryptfs + Clevis/Tang for at-rest encryption; SQLite manifest DB (three-table schema); Prometheus + Loki + Grafana + Alloy observability stack; Docker Compose v2 on a single VPS; Dovecot with OIDC/OAuth2 (XOAUTH2/OAUTHBEARER) for archive IMAP access.
 
 ## Status
 
@@ -55,6 +55,8 @@ Design documentation phase complete. No implementation exists yet. All architect
 
 ## Doc Authoring Conventions
 
+- **Cross-doc changes**: resolving a gap or changing a design decision typically requires synchronized edits in the threat model, TODOs.md, architecture.md, implementation.md, and/or operations.md — check all of them before closing an item
+- **Agents**: run `doc-consistency-checker` after any doc edit that changes section names or cross-references; run `security-reviewer` before closing any security-relevant gap (worker code, Docker config, secrets, network/firewall changes)
 - Section headers: `## N. Title` (numbered) for top-level, `### Title` for subsections
 - Cross-references: `docs/X.md §N` (e.g. `docs/architecture.md §7`)
 - Decision tables: columns `| Mitigation | Severity | Status |`; status values: `Not yet defined`, `Not yet defined — gap`, `Defined in docs/X.md §N`

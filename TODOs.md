@@ -71,7 +71,7 @@ These items are security gaps or procedural errors that could cause data loss or
 |---|---|---|---|---|
 | L1 | `AuthFailure` alert: exact log patterns/regex for mbsync auth errors not specified — too vague to implement | `docs/observability.md §Alert Mapping` | Open | |
 | L2 | `BackupSyncStale` threshold (2h) assumes rclone runs more often than every 2h, but rclone schedule is undefined (M7 above creates circular dependency) | `docs/observability.md §Alert Mapping` | Open | |
-| L3 | Pushgateway metric TTL not specified — by default Pushgateway never expires pushed metrics; a dead container's last-pushed values persist indefinitely | `docs/tech-stack.md §Pushgateway` | Open | |
+| L3 | Pushgateway metric TTL not specified — by default Pushgateway never expires pushed metrics; a dead container's last-pushed values persist indefinitely | `docs/tech-stack.md §Stack Decisions` | Open | |
 | L4 | Deploy job "wait 30 seconds" health check delay is arbitrary — should be based on Docker health check probes, not a fixed sleep | `docs/cicd.md §deploy` | Open | |
 | L5 | Rollback via manual `docker-compose.yml` edit on VPS is git-untracked — creates drift between repo and running config | `docs/cicd.md §Rollback` | Open | |
 | L6 | Secret store mechanism ambiguous — architecture.md §5 describes both age-encrypted files and HashiCorp Vault as options without choosing one | `docs/architecture.md §5` | Open | |

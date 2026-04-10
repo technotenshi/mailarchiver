@@ -36,10 +36,10 @@ If any condition fails, the provider copy is preserved.
 
 - **Ingest** — mbsync (isync) via IMAP; OAuth2 for Gmail/Outlook, app passwords for others
 - **Primary archive** — Maildir on a VPS, encrypted at rest with gocryptfs (passphrase derived at startup via Clevis + Tang on a secondary VPS)
-- **Backups** — Local rsnapshot over Tailscale VPN; Backblaze B2 and Cloudflare R2 via rclone crypt (AES-256)
-- **IMAP service** — Dovecot, accessible only to Tailscale peers
+- **Backups** — Local rsnapshot on an encrypted gocryptfs volume over Tailscale VPN; Backblaze B2 and Cloudflare R2 via rclone crypt (AES-256)
+- **IMAP service** — Dovecot with OIDC/OAuth2 login (XOAUTH2/OAUTHBEARER); accessible only to designated Tailscale peers
 - **Deletion worker** — Python daemon with SQLite manifest database
-- **Observability** — Prometheus + Loki + Grafana + Alertmanager; external heartbeat via healthchecks.io
+- **Observability** — Prometheus + Loki + Grafana + Alloy + Alertmanager; external heartbeat via healthchecks.io
 - **Orchestration** — Docker Compose v2 on a single VPS
 
 ## Status
