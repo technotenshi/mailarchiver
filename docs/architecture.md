@@ -242,11 +242,11 @@ Every alert in the observability stack depends on Prometheus evaluating rules. P
 
 The system must push a periodic heartbeat to an external service independent of the VPS (e.g. healthchecks.io). If the heartbeat stops arriving, the external service sends the notification. The heartbeat should be emitted by the worker after each successful poll cycle and by Ofelia after each mbsync run. This is the only mechanism that can detect a total VPS outage.
 
-### VPS hardening baseline
+### Primary VPS hardening baseline
 
-Required before deployment:
+Required before deployment on the primary Docker host:
 - SSH password authentication disabled; key-only login
-- SSH on non-standard port or protected by fail2ban
+- SSH on configured non-standard `SSH_PORT` or protected by fail2ban
 - Unattended security upgrades enabled on the VPS OS
 - Deploy SSH user is in the `docker` group only — no sudo, no system access
 
@@ -303,6 +303,7 @@ Allowed Tailscale flows:
 - `tag:admin-device -> tag:primary-vps:3000` for Grafana only
 - `tag:backup-server -> tag:primary-vps:SSH_PORT` for rsnapshot pull via `rsync` over SSH
 - `tag:primary-vps -> tag:tang-vps:7500` for Clevis/Tang only
+- `tag:backup-server -> tag:tang-vps:7500` for backup-server Clevis/Tang unlocks only
 - `tag:admin-device -> tag:backup-server:SSH_PORT` for backup-server administration
 
 All other Tailscale service access is denied by default.
@@ -396,12 +397,21 @@ Primary VPS disk imaged offline:
 
 Tang is extremely lightweight — it is a small daemon serving JOSE key-agreement responses. It requires no persistent storage of keys or client state. A minimal VPS instance (512 MB RAM, 1 vCPU) is sufficient.
 
-The Tang server is added to the Tailscale tailnet. The primary VPS contacts it only at startup (and during periodic re-binding). The Tang server holds no email data.
+The Tang server is added to the Tailscale tailnet. Only the primary VPS and backup server are allowed Tang clients. The primary VPS contacts it at startup (and during periodic re-binding); the backup server contacts it only to unlock the local rsnapshot gocryptfs target immediately before a snapshot run. The Tang server holds no email data.
 
 **Advantages over Tang on the local backup server:**
 - Always-on cloud availability (local server may be off or hibernated)
 - Separate failure domain from the primary VPS
 - No dependency on local server for VPS startup
+
+#### Tang VPS hardening baseline
+
+Required before deployment on the secondary Tang host:
+- SSH password authentication disabled; key-only login
+- SSH on configured non-standard `SSH_PORT` or protected by fail2ban
+- Unattended security upgrades enabled on the VPS OS
+
+The primary VPS deploy-user constraint (`docker` group only, no sudo) is specific to the Docker host and does not apply to the Tang VPS. Tang is not a Docker deployment target; keep it as a minimal dedicated host for the Tang service only.
 
 ### gocryptfs properties
 
@@ -424,9 +434,23 @@ At-rest encryption is specifically a disk-image / physical access threat mitigat
 
 ### Local rsnapshot backup
 
-The local server receives a plaintext rsync of the Maildir over Tailscale (gocryptfs is a filesystem mount — rclone sees the decrypted files). The local server should apply its own at-rest encryption:
-- **Preferred:** LUKS on the local server's backup volume (physical access is possible for manual unlock)
-- **Alternative:** gocryptfs on the rsnapshot target, passphrase stored locally (local server is trusted)
+**Decision: local rsnapshot copy encrypted with gocryptfs + Clevis/Tang**
+
+The local backup server receives a plaintext rsync of `maildir` and `manifest-db` over Tailscale, but rsnapshot must write only into a plaintext target that is itself backed by a local gocryptfs ciphertext directory. The local backup copy is therefore encrypted at rest on the backup server even though rsnapshot operates on plaintext files during the snapshot window.
+
+The backup-server gocryptfs layer has its own key material:
+- a separate gocryptfs passphrase from the primary VPS
+- a separate Clevis/Tang binding
+- a separate age-encrypted escrowed fallback record
+
+The backup-server mount lifecycle is job-scoped:
+- mount the plaintext rsnapshot target immediately before the rsnapshot job
+- verify the mount with `findmnt -T <rsnapshot-target>`
+- run rsnapshot only after the mount check confirms the expected gocryptfs target
+- unmount the plaintext target after the snapshot completes
+- fail closed if Tang is unavailable or the mount verification fails
+
+This keeps the local snapshot tree encrypted at rest when the backup server is idle. Normal rsnapshot runs must not write to an unmounted plaintext path.
 
 ### Startup sequence
 

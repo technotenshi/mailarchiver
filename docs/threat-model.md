@@ -112,7 +112,7 @@ flowchart LR
 | Per-file random IVs in gocryptfs — file-level isolation; compromise of one file's ciphertext does not expose key material for others | Medium | Inherent to gocryptfs |
 | File name encryption enabled — leaks no folder/account structure at filesystem level | Medium | **Defined in architecture.md §7** |
 | Fallback binding: age-encrypted passphrase escrowed in password manager (manual mount if Tang unreachable) | Medium | **Defined in architecture.md §7** |
-| Local rsnapshot copy: LUKS on local server backup volume (physical unlock possible) | Medium | See T9 |
+| Local rsnapshot copy: gocryptfs on backup server with separate Tang binding and fallback escrow | Medium | Defined in docs/architecture.md §Local rsnapshot backup |
 
 **Residual risk:** A live VPS compromise (attacker has shell) still has access to the mounted plaintext. gocryptfs is a disk-image threat mitigator, not a live-compromise mitigator. VPS hardening (T1) remains the primary defense against live access.
 
@@ -217,16 +217,16 @@ flowchart LR
 
 ### T9 — Local Backup Exposure
 
-**Impact:** Physical or network access to local server exposes unencrypted Maildir.
+**Impact:** Physical access to the backup server's disk, or shell access while the local snapshot target is mounted, can expose the local backup copy.
 
-**Current design:** B2 and R2 are encrypted. The local rsnapshot copy is **not encrypted** (it receives the plaintext Maildir over the Tailscale VPN).
+**Current design:** B2 and R2 are encrypted by rclone crypt. The local rsnapshot copy is also encrypted at rest on the backup server: rsnapshot writes only into a job-scoped gocryptfs plaintext target backed by a local ciphertext directory and unlocked via Clevis/Tang.
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| **Full-disk encryption on the local backup server** (LUKS or equivalent) | High | **Not yet defined — documented gap** |
+| gocryptfs on the local rsnapshot target, unlocked via Clevis/Tang, with separate age-encrypted fallback escrow | High | Defined in docs/architecture.md §Local rsnapshot backup |
 | rsnapshot directory: readable only by the rsnapshot user (filesystem permissions) | Medium | Not yet defined |
-| Access to local server itself only via Tailscale (same ACL controls as VPS access) | Medium | Implicitly handled by Tailscale network — define explicitly |
-| Accept residual risk: local backup is unencrypted at rest by design | — | Document as accepted risk if disk encryption is not implemented |
+| Access to local server itself only via Tailscale (same ACL controls as VPS access) | Medium | Not yet defined |
+| Accept residual risk: local snapshot plaintext is accessible while the job-scoped target is mounted | — | Documented residual risk after T9 controls |
 
 ---
 
@@ -312,9 +312,9 @@ both:      worker (metrics bridge)
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| Apply the same VPS hardening baseline to Tang server: SSH key-only, fail2ban, unattended security upgrades | High | Not yet defined |
+| Apply the same VPS hardening baseline to Tang server: SSH key-only, fail2ban, unattended security upgrades | High | Defined in docs/architecture.md §Tang VPS hardening baseline |
 | Tang must not be reachable from the public internet — bind to Tailscale interface only | High | Not yet defined |
-| Tailscale ACLs must restrict which nodes can reach Tang's port — primary VPS only | High | Defined in docs/architecture.md §Tailscale ACL matrix |
+| Tailscale ACLs must restrict which nodes can reach Tang's port — primary VPS and backup server only | High | Defined in docs/architecture.md §Tailscale ACL matrix |
 | Monitor Tang server uptime independently; alert if unreachable before a planned VPS restart | Medium | Not yet defined |
 | Fallback procedure for Tang unavailability (age-encrypted passphrase escrow) | Medium | Defined in docs/architecture.md §7 + docs/operations.md §7 |
 
@@ -366,8 +366,7 @@ both:      worker (metrics bridge)
 
 | Gap | Where to address | Severity |
 |---|---|---|
-| Local backup disk encryption | docs/recovery.md + docs/architecture.md | High |
-| Tang server hardening, public binding, and uptime monitoring (T15) | docs/operations.md + docs/architecture.md | High |
+| Tang public binding and uptime monitoring (T15) | docs/operations.md + docs/architecture.md | High |
 
 ---
 
@@ -375,7 +374,7 @@ both:      worker (metrics bridge)
 
 | Risk | Rationale |
 |---|---|
-| Maildir unencrypted at rest (if LUKS not implemented) | Compensating controls: minimal attack surface, Tailscale-only exposure, SSH hardening. VPS security is the primary control. |
-| Local backup unencrypted at rest (if local disk encryption not implemented) | Tailscale-scoped access, rsnapshot permissions provide soft mitigation. Physical security of the local server is assumed. |
+| Primary Maildir readable on a live compromised VPS while gocryptfs is mounted | At-rest encryption protects disk images and offline snapshots, not an attacker who already has shell or process access to the running host. |
+| Local backup plaintext visible while the rsnapshot target is mounted | The backup-server gocryptfs target is mounted only for snapshot runs or manual emergency access, but compromise during that window still exposes plaintext. |
 | Tailscale vendor dependency | If Tailscale is compromised at the vendor level, the VPN trust model fails. Mitigated by Dovecot authentication as a second layer. |
 | rclone crypt passphrase is a single key for all offsite data | Passphrase escrow requirement addresses loss; compromise requires immediate re-encryption of all backups. |

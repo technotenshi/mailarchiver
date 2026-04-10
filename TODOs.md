@@ -25,8 +25,8 @@ These items are security gaps or procedural errors that could cause data loss or
 
 | ID | Item | Source | Threat | Status | Resolved in |
 |---|---|---|---|---|---|
-| H1 | Tang server VPS hardening baseline not defined — same requirements as primary VPS (SSH key-only, fail2ban, unattended-upgrades) but no doc covers Tang | `docs/threat-model.md §T15` | T15 | Open | |
-| H2 | Local backup disk encryption decision deferred — architecture.md §7 lists two options (LUKS vs gocryptfs on rsnapshot target) but neither is chosen | `docs/architecture.md §7` | T9 | Open | |
+| H1 | Tang server VPS hardening baseline not defined — same requirements as primary VPS (SSH key-only, fail2ban, unattended-upgrades) but no doc covers Tang | `docs/threat-model.md §T15` | T15 | Resolved | `docs/architecture.md §Tang VPS hardening baseline` |
+| H2 | Local backup disk encryption decision deferred — no chosen at-rest encryption model for the rsnapshot target | `docs/architecture.md §Local rsnapshot backup` | T9 | Resolved | `docs/architecture.md §Local rsnapshot backup` |
 | H3 | Dovecot authentication method explicitly deferred (passwd-file vs PAM) — must be decided before Iteration 2 Track A begins | `docs/architecture.md §Open Decisions` | T1 | Open | |
 | H4 | SSH hardening specifics not defined — non-standard port value and fail2ban config thresholds are unspecified; "Not yet defined" in threat model | `docs/threat-model.md §T1` | T1 | Open | |
 | H5 | Tailscale device approval and tailnet admin MFA — both listed as "Not yet defined" | `docs/threat-model.md §T7` | T7 | Open | |
@@ -55,6 +55,8 @@ These items are security gaps or procedural errors that could cause data loss or
 | M10 | B2/R2 Object Lock (WORM): decision explicitly deferred in threat model | `docs/threat-model.md §T8` | Open | |
 | M11 | Docker Content Trust / Cosign signature verification for custom images: decision deferred | `docs/threat-model.md §T5` | Open | |
 | M12 | Third-party GitHub Actions audit process: "Not yet defined" | `docs/threat-model.md §T6` | Open | |
+| M13 | Backup-server rsnapshot path permissions not defined — ciphertext directory and plaintext rsnapshot target should be restricted to a dedicated rsnapshot user/service account | `docs/threat-model.md §T9` | Open | |
+| M14 | Backup-server host access policy not fully defined — T9 requires Tailscale-scoped administration, but no dedicated backup-server exposure/firewall baseline is documented | `docs/threat-model.md §T9` | Open | |
 
 ---
 

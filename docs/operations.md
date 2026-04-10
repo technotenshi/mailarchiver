@@ -101,6 +101,12 @@ for r in rows: print(r)
 
 Or check the Grafana metric `mailarchiver_backup_last_verified_timestamp_seconds{destination}`.
 
+### Local backup server: rsnapshot target handling
+
+The backup server's rsnapshot target has its own gocryptfs passphrase, Tang binding, and age-encrypted fallback record — separate key material from the primary VPS. The mount lifecycle (mount before rsnapshot, `findmnt` verification, unmount after, fail-closed on Tang unavailability) is defined in `docs/architecture.md §Local rsnapshot backup`.
+
+If Tang is unavailable, the normal rsnapshot run must stop. Use the age-escrowed fallback only for manual emergency access, then unmount the plaintext target immediately after.
+
 ---
 
 ## 4. System Health Check

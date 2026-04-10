@@ -79,10 +79,10 @@ Tests live in `worker/tests/`. The CI `lint-and-test` job runs `pytest` — no c
 | # | Task | Done when | Status |
 |---|---|---|---|
 | 1.1 | Tailscale mesh connects all three nodes (primary VPS, secondary VPS, local server) | `tailscale ping` succeeds between all three nodes | Pending |
-| 1.2 | Tang server operational on secondary VPS and reachable only from the primary VPS over Tailscale | From the primary VPS, `curl http://<tang-tailscale-ip>:7500/adv` returns a JOSE JWK response; from a non-primary Tailscale peer, the connection is refused | Pending |
+| 1.2 | Tang server operational on secondary VPS and reachable only from the primary VPS and backup server over Tailscale | From the primary VPS and backup server, `curl http://<tang-tailscale-ip>:7500/adv` returns a JOSE JWK response; from a different Tailscale peer, the connection is refused | Pending |
 | 1.3 | gocryptfs volumes initialized on primary VPS with Clevis/Tang binding; fallback age passphrase escrowed in password manager | Both cipher directories exist; `clevis decrypt < tang-binding.jwe` succeeds; passphrase stored in password manager | Pending |
 | 1.4 | `gocryptfs-mount.service` mounts both volumes automatically at boot (`Before=docker.service`) | After reboot: `mount \| grep gocryptfs` shows both mounts; `systemctl status gocryptfs-mount.service` shows active (exited) | Pending |
-| 1.5 | VPS hardening baseline applied | Password SSH auth rejected; fail2ban active; unattended-upgrades enabled; deploy user in `docker` group only | Pending |
+| 1.5 | Primary and Tang VPS hardening baselines applied | Primary VPS: password SSH rejected; SSH hardening per `H4`; unattended-upgrades enabled; deploy user remains `docker`-only. Tang VPS: password SSH rejected; SSH hardening per `H4`; unattended-upgrades enabled | Pending |
 
 See `docs/architecture.md §7` for the full startup sequence and Tang fallback procedure.
 
@@ -143,9 +143,9 @@ See `docs/architecture.md §6` for Dovecot TLS, ACL, and authentication requirem
 | 6.1 | B2 and R2 buckets created with object versioning enabled and public access blocked | Versioning confirmed via cloud console; a deleted object is retained as a previous version | Pending |
 | 6.2 | rclone crypt remotes configured for B2 and R2; passphrase escrowed in password manager | `rclone lsd b2-crypt:` and `rclone lsd r2-crypt:` succeed; passphrase recorded in password manager | Pending |
 | 6.3 | rclone sync job transfers Maildir and manifest-db to B2 and R2 with successful check | `rclone check b2-crypt:maildir /var/lib/mailarchiver/maildir` exits 0 with no missing files | Pending |
-| 6.5 | rsnapshot pulling Maildir and manifest-db from primary VPS to local server over Tailscale via `rsync` over SSH on `SSH_PORT` | Snapshot directory on local server contains Maildir files; at least one prior snapshot is retained | Pending |
+| 6.5 | rsnapshot pulls Maildir and manifest-db into a verified gocryptfs mount on the backup server over Tailscale via `rsync` over SSH on `SSH_PORT` | Separate local-backup Tang binding and age-escrowed fallback exist; `findmnt -T <rsnapshot-target>` shows the expected gocryptfs mount before rsnapshot writes; snapshot completes successfully; target is unmounted after the run | Pending |
 
-See `docs/architecture.md §1` for rclone crypt configuration, B2/R2 object versioning requirements, and passphrase escrow.
+See `docs/architecture.md §1` and `docs/architecture.md §Local rsnapshot backup` for rclone crypt configuration, local-backup encryption, and passphrase escrow.
 
 ### Track C — Core Observability
 
@@ -203,7 +203,7 @@ See `docs/architecture.md §2` for the full schema, worker algorithm pseudocode,
 | # | Task | Done when | Status |
 |---|---|---|---|
 | 6.4 | `backup_verifications` rows updated to CONFIRMED for B2 and R2 after each rclone check | SQL query shows CONFIRMED rows for both B2 and R2 destinations after a rclone run | Pending |
-| 6.6 | `backup_verifications` LOCAL rows updated to CONFIRMED after each rsnapshot run | SQL query shows CONFIRMED row for LOCAL destination after a snapshot run | Pending |
+| 6.6 | `backup_verifications` LOCAL rows updated to CONFIRMED after each rsnapshot run | SQL query shows CONFIRMED row for LOCAL destination after a snapshot run through the verified gocryptfs-backed local target | Pending |
 
 ### Track C — Worker Observability
 
