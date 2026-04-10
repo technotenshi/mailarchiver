@@ -12,9 +12,9 @@ Three prerequisites must be in place before a disaster occurs. If any are missin
 
 1. **rclone crypt passphrase is escrowed** — stored in a location independent of the VPS (personal password manager, printed copy in a secure location, or a second encrypted secret store). Without it, the B2 and R2 backups cannot be decrypted.
 
-2. **gocryptfs fallback passphrase is escrowed** — the age-encrypted fallback passphrase for gocryptfs (used when Tang is unreachable) must be stored in the same password manager as the rclone passphrase. Without it, the restored Maildir volume cannot be mounted if the Tang server is temporarily unavailable during recovery.
+2. **The gocryptfs escrow mechanism is recoverable** — the `age` recipient used to encrypt the fallback passphrase, and access to the password-manager entry where that age-encrypted blob is stored, must both be recoverable. During a full VPS rebuild, the recovery procedure generates a new gocryptfs passphrase and immediately re-escrows it in the same age-encrypted format before any restore begins.
 
-3. **Docker Compose config and secrets are version-controlled or backed up** — the Compose file, Ofelia config, Prometheus/Alertmanager config, and all Docker secrets must be recoverable independently of the VPS disk. Secrets (OAuth2 tokens, app passwords, webhook URLs) should be documented in a password manager; the configs may be in a private git repository.
+3. **Docker Compose config and secrets are version-controlled or backed up** — the Compose file, `gocryptfs-mount.service`, Ofelia config, Prometheus/Alertmanager config, and all Docker secrets must be recoverable independently of the VPS disk. Secrets (OAuth2 tokens, app passwords, webhook URLs) should be documented in a password manager; the configs may be in a private git repository.
 
 ---
 
@@ -24,46 +24,103 @@ Three prerequisites must be in place before a disaster occurs. If any are missin
 
 Before provisioning anything:
 - Retrieve the rclone crypt passphrase from its escrowed location
+- Retrieve the `age` recipient or public key used to encrypt the gocryptfs fallback passphrase
 - Retrieve all Docker secrets (OAuth2 tokens, app passwords, SMTP credentials, webhook URLs) from the password manager
-- Confirm you have the Compose and config files (from git or backup)
+- Confirm you have the Compose and config files (from git or backup), including `gocryptfs-mount.service`
 
 ### Step 2 — Provision a new VPS
 
 - Same OS (Ubuntu), same architecture as the original
 - Install Docker Engine and Docker Compose v2
 - Install Tailscale and authenticate to the same tailnet (this restores connectivity to the local rsnapshot server and the Tang VPS)
-- Install `gocryptfs` and `clevis-tang` packages
+- Install `gocryptfs`, `clevis-tang`, and `age`
 - Verify Tang server (secondary VPS) is reachable over Tailscale before proceeding — all gocryptfs mounts depend on it
+- If Tang is unreachable, stop here. Do not run `rclone copy` until Tang connectivity is restored and the host-level gocryptfs mounts are working.
 
-### Step 3 — Restore Maildir from offsite backup
+### Step 3 — Recreate encrypted volumes, start the host mounts, and verify targets
+
+Rebuild the encrypted-at-rest layer on the new VPS before restoring any data. Use the standard host paths from `docs/architecture.md §7` so the recovered host matches the steady-state deployment:
+
+```
+mkdir -p /etc/mailarchiver \
+  /var/lib/mailarchiver/maildir-cipher \
+  /var/lib/mailarchiver/manifest-db-cipher \
+  /var/lib/mailarchiver/maildir \
+  /var/lib/mailarchiver/manifest-db
+
+umask 077
+openssl rand -base64 32 > /tmp/gocryptfs-pass
+age --encrypt -r <age-recipient> -o /tmp/gocryptfs-pass.age /tmp/gocryptfs-pass
+```
+
+Before continuing, store `/tmp/gocryptfs-pass.age` in the password manager or equivalent off-host escrow location. The rebuilt VPS uses this new passphrase; the previous host's fallback record no longer matches the recovered system.
+
+Initialize both ciphertext directories with the new passphrase:
+
+```
+gocryptfs -init -passfile /tmp/gocryptfs-pass \
+  /var/lib/mailarchiver/maildir-cipher
+gocryptfs -init -passfile /tmp/gocryptfs-pass \
+  /var/lib/mailarchiver/manifest-db-cipher
+
+clevis encrypt tang '{"url":"http://<tang-vps-tailscale-ip>:7500"}' \
+  < /tmp/gocryptfs-pass \
+  > /etc/mailarchiver/tang-binding.jwe
+```
+
+Install the recovered `gocryptfs-mount.service` at `/etc/systemd/system/gocryptfs-mount.service`, make sure it references the newly generated `/etc/mailarchiver/tang-binding.jwe`, then start it before any restore:
+
+```
+systemctl daemon-reload
+systemctl enable --now gocryptfs-mount.service
+```
+
+Verify both plaintext targets are backed by the matching `*-cipher` mount before restoring data:
+
+```
+findmnt -no SOURCE,TARGET,FSTYPE -T /var/lib/mailarchiver/maildir
+findmnt -no SOURCE,TARGET,FSTYPE -T /var/lib/mailarchiver/manifest-db
+```
+
+Each command must show the corresponding `*-cipher` directory as `SOURCE`, the plaintext path as `TARGET`, and `fuse.gocryptfs` as `FSTYPE`. If either check fails, stop and fix the mount service before running `rclone copy`.
+
+Once the mounts are verified and the encrypted escrow file is stored off-host, remove the temporary plaintext passphrase material:
+
+```
+shred -u /tmp/gocryptfs-pass
+rm -f /tmp/gocryptfs-pass.age
+```
+
+### Step 4 — Restore Maildir from offsite backup
 
 Choose B2 or R2 as the restore source (prefer whichever had the most recent confirmed sync, visible in Grafana — or use either if Grafana is unavailable).
 
 ```
-# Configure rclone with the crypt remote pointing to B2 or R2
-# Then decrypt and restore to the new Maildir volume path:
-rclone copy b2-crypt:maildir /path/to/maildir/
+# Configure rclone with the crypt remote pointing to B2 or R2.
+# Restore only into the verified gocryptfs mount target:
+rclone copy b2-crypt:maildir /var/lib/mailarchiver/maildir/
 ```
 
 This is the longest step. Duration depends on Maildir size and network speed.
 
-### Step 4 — Restore manifest DB
+### Step 5 — Restore manifest DB
 
-The `manifest-db` volume was synced alongside `maildir`. Restore it from the same backup source:
+The `manifest-db` volume was synced alongside `maildir`. Restore it from the same backup source into the verified gocryptfs mount:
 
 ```
-rclone copy b2-crypt:manifest-db /path/to/manifest-db/
+rclone copy b2-crypt:manifest-db /var/lib/mailarchiver/manifest-db/
 ```
 
 If the manifest DB backup is absent or corrupt, skip to the fallback procedure below.
 
-### Step 5 — Restore configuration and secrets
+### Step 6 — Restore remaining configuration and secrets
 
-- Place Docker Compose file and all service configs in their expected paths
+- Place Docker Compose file and all remaining service configs in their expected paths
 - Load Docker secrets from the password manager
 - Verify rclone.conf contains the correct crypt remote configurations for B2 and R2
+- Do not overwrite the newly generated `/etc/mailarchiver/tang-binding.jwe` with a stale copy from backup or version control
 
-### Step 6 — Start all containers
+### Step 7 — Start all containers
 
 ```
 docker compose up -d
@@ -75,7 +132,7 @@ Verify:
 - Grafana dashboards show expected state
 - External heartbeat resumes (healthchecks.io shows green)
 
-### Step 7 — Re-run backup verifications
+### Step 8 — Re-run backup verifications
 
 After restore, all `backup_verifications` rows for the new VPS's rclone will be stale. Trigger a manual rclone sync + check run to repopulate confirmation timestamps before the deletion worker resumes normal operation:
 

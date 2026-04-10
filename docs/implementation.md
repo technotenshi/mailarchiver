@@ -79,7 +79,7 @@ Tests live in `worker/tests/`. The CI `lint-and-test` job runs `pytest` — no c
 | # | Task | Done when | Status |
 |---|---|---|---|
 | 1.1 | Tailscale mesh connects all three nodes (primary VPS, secondary VPS, local server) | `tailscale ping` succeeds between all three nodes | Pending |
-| 1.2 | Tang server operational on secondary VPS and reachable from primary over Tailscale | `curl http://<tang-tailscale-ip>:7500/adv` returns a JOSE JWK response | Pending |
+| 1.2 | Tang server operational on secondary VPS and reachable only from the primary VPS over Tailscale | From the primary VPS, `curl http://<tang-tailscale-ip>:7500/adv` returns a JOSE JWK response; from a non-primary Tailscale peer, the connection is refused | Pending |
 | 1.3 | gocryptfs volumes initialized on primary VPS with Clevis/Tang binding; fallback age passphrase escrowed in password manager | Both cipher directories exist; `clevis decrypt < tang-binding.jwe` succeeds; passphrase stored in password manager | Pending |
 | 1.4 | `gocryptfs-mount.service` mounts both volumes automatically at boot (`Before=docker.service`) | After reboot: `mount \| grep gocryptfs` shows both mounts; `systemctl status gocryptfs-mount.service` shows active (exited) | Pending |
 | 1.5 | VPS hardening baseline applied | Password SSH auth rejected; fail2ban active; unattended-upgrades enabled; deploy user in `docker` group only | Pending |
@@ -130,7 +130,7 @@ See `docs/cicd.md` for pipeline design.
 |---|---|---|---|
 | 4.1 | Dovecot configured for Maildir storage with IMAPS/993 TLS using a Tailscale-issued certificate | `openssl s_client -connect <host>:993` shows a valid cert; plaintext port 143 refused | Pending |
 | 4.2 | Dovecot authentication working with at least one mail user | Mail client (e.g., Thunderbird) authenticates successfully and can browse archived messages | Pending |
-| 4.3 | Tailscale ACL restricts Dovecot port 993 to designated mail client devices only | Connection from a non-approved Tailscale device is refused; approved device connects | Pending |
+| 4.3 | Tailscale ACL restricts Dovecot port 993 to designated mail client devices only | Connection from a `tag:mail-client` peer succeeds; connection from a non-mail-client Tailscale peer is refused | Pending |
 
 See `docs/architecture.md §6` for Dovecot TLS, ACL, and authentication requirements.
 
@@ -143,7 +143,7 @@ See `docs/architecture.md §6` for Dovecot TLS, ACL, and authentication requirem
 | 6.1 | B2 and R2 buckets created with object versioning enabled and public access blocked | Versioning confirmed via cloud console; a deleted object is retained as a previous version | Pending |
 | 6.2 | rclone crypt remotes configured for B2 and R2; passphrase escrowed in password manager | `rclone lsd b2-crypt:` and `rclone lsd r2-crypt:` succeed; passphrase recorded in password manager | Pending |
 | 6.3 | rclone sync job transfers Maildir and manifest-db to B2 and R2 with successful check | `rclone check b2-crypt:maildir /var/lib/mailarchiver/maildir` exits 0 with no missing files | Pending |
-| 6.5 | rsnapshot pulling Maildir and manifest-db from primary VPS to local server over Tailscale | Snapshot directory on local server contains Maildir files; at least one prior snapshot is retained | Pending |
+| 6.5 | rsnapshot pulling Maildir and manifest-db from primary VPS to local server over Tailscale via `rsync` over SSH on `SSH_PORT` | Snapshot directory on local server contains Maildir files; at least one prior snapshot is retained | Pending |
 
 See `docs/architecture.md §1` for rclone crypt configuration, B2/R2 object versioning requirements, and passphrase escrow.
 
@@ -153,9 +153,9 @@ See `docs/architecture.md §1` for rclone crypt configuration, B2/R2 object vers
 
 | # | Task | Done when | Status |
 |---|---|---|---|
-| 7.1 | All 7 observability containers start in Compose (Prometheus, Loki, Grafana, Alertmanager, Promtail, Pushgateway, node-exporter) | `docker compose ps` shows all 7 containers running; none restart-looping | Pending |
-| 7.2 | Promtail ships container logs to Loki with correct labels | Grafana Explore → Loki query for `{container="worker"}` returns recent log lines | Pending |
-| 7.5 | Grafana secured: no anonymous access, admin password via Docker secret, not exposed on public VPS IP | Anonymous request to Grafana returns 401; Grafana port unreachable from outside Tailscale | Pending |
+| 7.1 | All 8 observability containers start in Compose (Prometheus, Loki, Grafana, Alertmanager, Alloy, docker-socket-proxy, Pushgateway, node-exporter) | `docker compose ps` shows all 8 containers running; none restart-looping | Pending |
+| 7.2 | Alloy ships container logs to Loki with correct labels through the socket proxy | Grafana Explore → Loki query for `{container="worker"}` returns recent log lines, and Alloy has no direct `/var/run/docker.sock` bind mount | Pending |
+| 7.5 | Grafana secured: no anonymous access, admin password via Docker secret, not exposed on public VPS IP, and reachable only from `tag:admin-device` over Tailscale | Anonymous request to Grafana returns 401; Grafana port is unreachable from the public internet and from non-admin Tailscale peers | Pending |
 | 7.6 | healthchecks.io checks created and receiving heartbeats from worker and Ofelia | healthchecks.io dashboard shows both checks green after one full worker cycle and one mbsync run | Pending |
 | 7.3a | Alert rules for ingest and backup: `IngestStale`, `BackupSyncStale`, `BackupMissingFiles`, `MaildirDiskPressure`, `VPSUnreachable` | `promtool check rules config/prometheus/alerts.yml` exits 0; all five alert names present | Pending |
 | 7.4a | Alertmanager routing skeleton: Slack/Discord webhook receives test alert for Warning severity | `amtool check-config` exits 0; manually triggered test alert appears in Slack channel | Pending |
@@ -168,7 +168,7 @@ See `docs/observability.md` for the full alert mapping, routing rules, and acces
 
 | # | Task | Done when | Status |
 |---|---|---|---|
-| 8.1d | CI `build-and-scan`: add Trivy scan for all off-the-shelf images (dovecot, rclone, prometheus, loki, grafana, alertmanager) pulled by their pinned digest | Trivy scan passes on CI; HIGH/CRITICAL CVEs fail the job | Pending |
+| 8.1d | CI `build-and-scan`: add Trivy scan for all off-the-shelf images (dovecot, rclone, prometheus, loki, grafana, alertmanager, docker-socket-proxy) pulled by their pinned digest | Trivy scan passes on CI; HIGH/CRITICAL CVEs fail the job | Pending |
 | 8.1e | CI `validate-configs`: add promtool check config and amtool check-config steps | Both tools validate cleanly in CI; alert configs must pass before merge | Pending |
 
 See `docs/cicd.md §build-and-scan` and `docs/cicd.md §validate-configs`.

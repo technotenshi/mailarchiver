@@ -250,6 +250,29 @@ Required before deployment:
 - Unattended security upgrades enabled on the VPS OS
 - Deploy SSH user is in the `docker` group only — no sudo, no system access
 
+### VPS host firewall
+
+**Decision: UFW on the Ubuntu host, with persistent Docker filtering in `DOCKER-USER`**
+
+The host firewall is a defense-in-depth control. The primary control is still correct Docker Compose configuration: Prometheus, Loki, Alertmanager, and Pushgateway must not be port-mapped to the host at all. The firewall exists to reduce blast radius if an operator accidentally publishes a port or adds a temporary debug mapping.
+
+Baseline host policy:
+- UFW is the operator-facing firewall tool on the primary VPS
+- Default policy: `deny incoming`, `allow outgoing`
+- Public interface: allow only `SSH_PORT/tcp` to the host SSH daemon
+- `tailscale0` interface: allow only `993/tcp` for Dovecot IMAPS and `3000/tcp` for Grafana
+- Do not allow Prometheus `9090`, Loki `3100`, Alertmanager `9093`, or Pushgateway `9091` on any host interface
+
+Docker installs its own iptables rules for published container ports. Plain UFW is not sufficient protection for Docker-published ports, because Docker's forwarding path can bypass the intended host firewall policy. The firewall baseline therefore requires a persistent `DOCKER-USER` policy in addition to UFW.
+
+Required `DOCKER-USER` policy behavior:
+- Preserve `ESTABLISHED,RELATED` traffic
+- Allow forwarded traffic to published containers only when it matches the approved ingress contract
+- Approved ingress contract: `993/tcp` and `3000/tcp` only when traffic enters via `tailscale0`
+- Drop other inbound forwarded traffic to Docker-published ports by default
+
+This firewall baseline does not replace Tailscale ACLs. Dovecot and Grafana remain Tailscale-scoped services; tailnet peer authorization is defined in the Tailscale ACL matrix section below.
+
 ### At-rest encryption
 
 LUKS full-disk encryption is impractical for unattended cloud VPS deployments — it requires interactive passphrase entry at every boot. The chosen approach is **gocryptfs + Clevis/Tang**, documented in §7. The Maildir and manifest DB are encrypted at the directory level; the passphrase is derived automatically at startup from the Tang server over Tailscale and never stored on the primary VPS disk.
@@ -259,9 +282,37 @@ LUKS full-disk encryption is impractical for unattended cloud VPS deployments �
 Dovecot is a long-running daemon with a network-accessible IMAP port. The following must be defined before deployment:
 
 - **TLS required** — Dovecot must terminate IMAPS (port 993) with a valid certificate. Plaintext IMAP (port 143) must not be accessible outside localhost.
-- **Access scope** — Dovecot is accessible only to Tailscale network peers. **Tailscale ACLs must explicitly restrict which nodes can reach VPS port 993** — not all tailnet peers, only designated mail client devices and the local backup server.
+- **Access scope** — Dovecot is accessible only to Tailscale network peers. **Tailscale ACLs must explicitly restrict which nodes can reach VPS port 993** — not all tailnet peers, only designated mail client devices.
 - **Certificate source** — Tailscale provides per-machine TLS certificates via its ACME integration; this is the natural fit for a Tailscale-scoped deployment.
 - **Dovecot authentication** — method to be defined at implementation time (passwd-file is the minimal self-contained option).
+
+### Tailscale ACL matrix
+
+**Decision: tag-based Tailscale roles with explicit allow rules per service**
+
+The tailnet policy is defined in terms of stable role tags rather than hostnames, so device replacement does not require rewriting the ACL model. The documented roles are:
+
+- `tag:primary-vps`
+- `tag:tang-vps`
+- `tag:backup-server`
+- `tag:mail-client`
+- `tag:admin-device`
+
+Allowed Tailscale flows:
+- `tag:mail-client -> tag:primary-vps:993` for Dovecot IMAPS only
+- `tag:admin-device -> tag:primary-vps:3000` for Grafana only
+- `tag:backup-server -> tag:primary-vps:SSH_PORT` for rsnapshot pull via `rsync` over SSH
+- `tag:primary-vps -> tag:tang-vps:7500` for Clevis/Tang only
+- `tag:admin-device -> tag:backup-server:SSH_PORT` for backup-server administration
+
+All other Tailscale service access is denied by default.
+
+Clarifications:
+- The local backup server is not a Dovecot client and does not need access to `993`
+- Grafana is not open to arbitrary tailnet peers; only `tag:admin-device` may reach `3000`
+- The backup path is SSH-based `rsync`, not a native `rsyncd` port
+- These ACLs complement the host firewall; they do not replace it
+- Exact Tailscale policy JSON syntax, tag-owner rules, device approval, and admin-console monitoring procedures are defined separately
 
 ### Container restart policies
 

@@ -30,33 +30,52 @@ Ranked by impact of loss or compromise:
 
 ## Trust Boundaries
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ Internet                                                        │
-│  Gmail, Outlook, Yahoo  ──IMAP/TLS──▶                          │
-│  Backblaze B2, CF R2    ◀──S3/TLS──▶   ┌────────────────────┐ │
-│  GitHub Actions         ──SSH──────▶   │       VPS          │ │
-│  healthchecks.io        ◀──HTTPS───    │                    │ │
-│  SMTP relay             ◀──SMTP/TLS─   │  ┌──────────────┐  │ │
-│  Slack/Discord webhook  ◀──HTTPS───    │  │ app-net      │  │ │
-└─────────────────────────────────────────  │  (mbsync,     │  │ │
-                                         │  │  worker,      │  │ │
-┌────────────────────┐                   │  │  dovecot,     │  │ │
-│ Tailscale network  │                   │  │  rclone,      │  │ │
-│                    │                   │  │  tailscale,   │  │ │
-│  Mail clients      ├──IMAPS/993──▶     │  │  ofelia)      │  │ │
-│  Local server      ├──rsync──────▶     │  └──────────────┘  │ │
-│  (rsnapshot)       │                   │  ┌──────────────┐  │ │
-└────────────────────┘                   │  │ obs-net      │  │ │
-                                         │  │ (prometheus, │  │ │
-                                         │  │  loki,       │  │ │
-                                         │  │  grafana,    │  │ │
-                                         │  │  alertmgr,   │  │ │
-                                         │  │  promtail,   │  │ │
-                                         │  │  pushgw,     │  │ │
-                                         │  │  node-exp)   │  │ │
-                                         │  └──────────────┘  │ │
-                                         └────────────────────┘ │
+```mermaid
+flowchart LR
+    subgraph Internet["Internet"]
+        providers["Gmail · Outlook · Yahoo"]
+        storage["Backblaze B2 · Cloudflare R2"]
+        github["GitHub Actions"]
+        hc["healthchecks.io"]
+        smtp["SMTP relay"]
+        slack["Slack / Discord webhook"]
+    end
+
+    subgraph Tailscale["Tailscale network"]
+        clients["Mail clients"]
+        local["Local server\n(rsnapshot)"]
+    end
+
+    subgraph VPS["VPS"]
+        host["VPS host"]
+        subgraph appnet["app-net"]
+            mbsync
+            dovecot
+            worker
+            rclone
+            tailsvc["tailscale"]
+            ofelia
+        end
+        subgraph obsnet["obs-net"]
+            prometheus
+            loki
+            grafana
+            alertmanager
+            alloy
+            pushgateway
+            nodeexp["node-exporter"]
+        end
+    end
+
+    providers -->|"IMAP / TLS"| mbsync
+    rclone <-->|"S3 / TLS"| storage
+    github -->|"SSH"| host
+    worker -->|"HTTPS"| hc
+    alertmanager -->|"SMTP / TLS"| smtp
+    alertmanager -->|"HTTPS"| slack
+
+    clients -->|"IMAPS / 993"| dovecot
+    local -->|"rsync"| host
 ```
 
 ---
@@ -166,13 +185,13 @@ Ranked by impact of loss or compromise:
 
 ### T7 — Tailscale ACL / Rogue Peer
 
-**Impact:** Any Tailscale peer can reach Dovecot IMAP (read all archived email) and the local backup server.
+**Impact:** Any Tailscale peer can reach Dovecot IMAP, Grafana, or backup-management paths unless the tailnet policy restricts them by role.
 
 **Vectors:** Tailscale account compromise; rogue device added to tailnet; Tailscale service compromise.
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| **Define Tailscale ACLs**: only specific nodes (mail clients, local server) can reach VPS:993 | High | **Not yet defined — gap** |
+| **Define Tailscale ACL matrix**: `tag:mail-client -> tag:primary-vps:993`, `tag:admin-device -> tag:primary-vps:3000`, `tag:backup-server -> tag:primary-vps:SSH_PORT`, `tag:admin-device -> tag:backup-server:SSH_PORT`; deny other Tailscale service access by default | High | Defined in docs/architecture.md §Tailscale ACL matrix |
 | Enable Tailscale device approval: new devices require explicit admin approval before joining tailnet | High | Not yet defined |
 | Enable Tailscale MFA on the tailnet admin account | High | Not yet defined |
 | Dovecot authentication provides a second factor for IMAP access even for authorized Tailscale peers | Medium | Method TBD — see architecture.md |
@@ -222,13 +241,13 @@ Ranked by impact of loss or compromise:
 | **Define two Docker networks**: `app-net` (application containers) and `obs-net` (observability containers) | High | Defined in docs/tech-stack.md §Docker network segmentation |
 | Worker attached to both networks (exposes `/metrics` to `obs-net`; accesses Maildir on `app-net`) | High | Defined in docs/tech-stack.md §Docker network segmentation |
 | Pushgateway bridges both networks — mbsync and rclone push to it on `app-net`; Prometheus scrapes it from `obs-net` | Medium | Defined in docs/tech-stack.md §Docker network segmentation |
-| Promtail requires Docker socket access (host bind mount) — this is unavoidable; review what other containers mount | Medium | Not yet defined |
+| Alloy must not mount `/var/run/docker.sock` directly; only a socket proxy may bind the Docker socket | Medium | Defined in docs/tech-stack.md §Docker socket proxy |
 
 **Proposed network layout:**
 
 ```
 app-net:   mbsync, dovecot, worker, rclone, tailscale, ofelia, pushgateway
-obs-net:   prometheus, loki, grafana, alertmanager, promtail, node-exporter
+obs-net:   prometheus, loki, grafana, alertmanager, alloy, docker-socket-proxy, node-exporter
 both:      worker (metrics bridge)
 ```
 
@@ -295,23 +314,23 @@ both:      worker (metrics bridge)
 |---|---|---|
 | Apply the same VPS hardening baseline to Tang server: SSH key-only, fail2ban, unattended security upgrades | High | Not yet defined |
 | Tang must not be reachable from the public internet — bind to Tailscale interface only | High | Not yet defined |
-| Tailscale ACLs must restrict which nodes can reach Tang's port — primary VPS only | High | Not yet defined — gap |
+| Tailscale ACLs must restrict which nodes can reach Tang's port — primary VPS only | High | Defined in docs/architecture.md §Tailscale ACL matrix |
 | Monitor Tang server uptime independently; alert if unreachable before a planned VPS restart | Medium | Not yet defined |
 | Fallback procedure for Tang unavailability (age-encrypted passphrase escrow) | Medium | Defined in docs/architecture.md §7 + docs/operations.md §7 |
 
 ---
 
-### T16 — Promtail Docker Socket Privilege Escalation
+### T16 — Log Shipper Docker Socket Privilege Escalation
 
-**Impact:** Promtail requires a bind mount of `/var/run/docker.sock`. A compromised Promtail container has host-level Docker access — it can list, inspect, exec into, and read the filesystems of all running containers including the worker and Dovecot. This bypasses the `app-net`/`obs-net` network segmentation (T10) entirely.
+**Impact:** If Alloy mounts `/var/run/docker.sock` directly, a compromised Alloy container has host-level Docker access — it can list, inspect, exec into, and read the filesystems of all running containers including the worker and Dovecot. This bypasses the `app-net`/`obs-net` network segmentation (T10) entirely.
 
-**Vectors:** Compromised Promtail image (supply chain — see T5); unpatched CVE in Promtail exploited from `obs-net`; Docker socket used to exec into worker container and read Maildir or manifest DB.
+**Vectors:** Compromised Alloy image (supply chain — see T5); unpatched CVE in Alloy exploited from `obs-net`; direct Docker socket access used to exec into worker container and read Maildir or manifest DB; overly broad socket-proxy API allowlist exposes more Docker metadata/control than Alloy needs.
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| Pin Promtail image by digest; include in Trivy CI scan — extends T5 mitigations | Critical | Defined in docs/tech-stack.md §Image digest pinning + docs/cicd.md §build-and-scan |
-| Use a Docker socket proxy (e.g. `tecnativa/docker-socket-proxy`) in front of `/var/run/docker.sock` — restrict Promtail to log-read operations only; deny exec, start, stop, and container inspection | High | Not yet defined — gap |
-| Audit Promtail container capabilities: drop all unnecessary Linux capabilities (`cap_drop: ALL`) | Medium | Not yet defined |
+| Pin Alloy image by digest; include in Trivy CI scan — extends T5 mitigations | Critical | Defined in docs/tech-stack.md §Image digest pinning + docs/cicd.md §build-and-scan |
+| Use a Docker socket proxy (e.g. `tecnativa/docker-socket-proxy`) in front of `/var/run/docker.sock` — allow only the minimum read-only metadata/discovery API sections Alloy requires (`PING`, `VERSION`, `EVENTS`, `INFO`, `CONTAINERS`, `NETWORKS`) and deny mutating/control paths | High | Defined in docs/tech-stack.md §Docker socket proxy |
+| Audit Alloy container capabilities: drop all unnecessary Linux capabilities (`cap_drop: ALL`) | Medium | Not yet defined |
 
 ---
 
@@ -324,21 +343,21 @@ both:      worker (metrics bridge)
 | Mitigation | Severity | Status |
 |---|---|---|
 | Prometheus, Loki, Alertmanager, and Pushgateway must not be port-mapped to the VPS host; Grafana is the sole operator-facing ingress | Critical | Defined in docs/observability.md §Access Controls |
-| VPS host firewall (ufw/iptables): default-deny inbound; allow only SSH (non-standard port) and IMAPS/993 from Tailscale interface | High | Not yet defined — gap |
+| VPS host firewall (`ufw` + persistent `DOCKER-USER` policy): default-deny inbound; allow only `SSH_PORT/tcp` on the public interface and `993/tcp` + `3000/tcp` on `tailscale0`; no public observability services | High | Defined in docs/architecture.md §VPS host firewall |
 | CI `validate-configs` job: lint Compose file for `0.0.0.0` port bindings on observability service ports | Medium | Not yet defined |
 
 ---
 
 ### T18 — Recovery Procedure Plaintext Exposure
 
-**Impact:** The recovery runbook (`docs/recovery.md`) restores the Maildir from rclone without first initializing and mounting gocryptfs on the new VPS. If followed verbatim, `rclone copy` writes decrypted email to an unencrypted disk path, nullifying the at-rest encryption guarantee of T2 for the duration of the recovery operation.
+**Impact:** The recovery runbook (`docs/recovery.md`) restores the Maildir and manifest DB from rclone without first initializing and mounting gocryptfs on the new VPS. If followed verbatim, `rclone copy` writes decrypted data to an unencrypted disk path, nullifying the at-rest encryption guarantee of T2 for the duration of the recovery operation.
 
-**Vectors:** Operator follows `docs/recovery.md` under time pressure without noticing the missing gocryptfs init step; Tang is reachable but the gocryptfs ciphertext volume has not yet been initialized on the new VPS; rclone restore runs before the gocryptfs mount is in place.
+**Vectors:** Operator follows `docs/recovery.md` under time pressure without noticing the missing gocryptfs init step; Tang is reachable but the gocryptfs ciphertext volumes have not yet been initialized on the new VPS; rclone restore runs before the gocryptfs mounts are in place.
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| Recovery runbook must be updated: initialize gocryptfs ciphertext volume (`gocryptfs -init`) and mount it before running `rclone copy` to restore the Maildir | Critical | Not yet defined — gap |
-| Add explicit pre-condition check to recovery procedure: verify gocryptfs is mounted at the target path before proceeding to rclone restore | High | Not yet defined |
+| Recovery runbook must be updated: initialize gocryptfs ciphertext volumes (`gocryptfs -init`) and mount them before running `rclone copy` to restore the Maildir or manifest DB | Critical | Defined in docs/recovery.md §Step 3 |
+| Add explicit pre-condition check to recovery procedure: verify gocryptfs is mounted at the target path before proceeding to rclone restore | High | Defined in docs/recovery.md §Step 3 |
 | Recovery procedure drill should verify gocryptfs is mounted and restored data lands on the encrypted filesystem | Medium | Not yet defined |
 
 ---
@@ -347,12 +366,8 @@ both:      worker (metrics bridge)
 
 | Gap | Where to address | Severity |
 |---|---|---|
-| Tailscale ACLs (restrict Dovecot access and Tang port to specific nodes) | docs/architecture.md §6 | High |
 | Local backup disk encryption | docs/recovery.md + docs/architecture.md | High |
-| Tang server hardening and Tailscale ACL for Tang port (T15) | docs/operations.md + docs/architecture.md | High |
-| Docker socket proxy for Promtail (T16) | docs/tech-stack.md | High |
-| VPS host firewall default-deny; observability services off public interface (T17) | docs/architecture.md §6 | High |
-| gocryptfs init step in recovery procedure before rclone restore (T18) | docs/recovery.md | Critical |
+| Tang server hardening, public binding, and uptime monitoring (T15) | docs/operations.md + docs/architecture.md | High |
 
 ---
 

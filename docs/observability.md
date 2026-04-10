@@ -2,7 +2,7 @@
 
 ## Stack Decision
 
-**Prometheus + Loki + Grafana + Alertmanager + Promtail + Pushgateway + Node Exporter**
+**Prometheus + Loki + Grafana + Alertmanager + Alloy + Docker Socket Proxy + Pushgateway + Node Exporter**
 
 All Grafana ecosystem, all Docker Compose–native, all lightweight.
 
@@ -17,7 +17,7 @@ OTel is an instrumentation SDK and collection standard — it still requires a b
 ### Why this stack
 
 - **Loki** is order-of-magnitude lighter than Elasticsearch — it indexes log metadata (labels), not full text. A typical instance runs ~200 MB RAM.
-- **Promtail** ships logs from Docker's JSON log files with zero changes to application containers.
+- **Alloy** (Grafana Alloy, the supported successor to Promtail) ships logs from Docker's JSON log files with zero changes to application containers.
 - **Pushgateway** solves the ephemeral container problem: mbsync and rclone push metrics on exit; Prometheus scrapes on its normal interval. This is the canonical pattern for batch/cron job observability.
 - **Grafana** queries both Prometheus and Loki as datasources — metrics and logs are correlated in the same dashboards.
 - All five failure modes from `architecture.md §4` are covered by this stack without custom log-scraping scripts.
@@ -30,7 +30,8 @@ OTel is an instrumentation SDK and collection standard — it still requires a b
 |---|---|---|
 | `prometheus` | Metrics store + alerting rule evaluation | Long-running |
 | `loki` | Log store (label-indexed, not full-text) | Long-running |
-| `promtail` | Log shipper — reads Docker JSON log files → Loki | Long-running |
+| `alloy` | Log shipper — reads Docker JSON log files → Loki | Long-running |
+| `docker-socket-proxy` | Read-only Docker API allowlist for Alloy metadata discovery | Long-running |
 | `grafana` | Dashboards; queries Prometheus and Loki | Long-running |
 | `alertmanager` | Alert routing to email and Slack/Discord webhook | Long-running |
 | `pushgateway` | Receives push metrics from ephemeral containers | Long-running |
@@ -73,15 +74,17 @@ mailarchiver_worker_deletions_total{account, status}      # status: success | fa
 mailarchiver_backup_last_verified_timestamp_seconds{destination}
 ```
 
-### Logs → Promtail → Loki (zero container changes)
+### Logs → Alloy → Loki (zero application-container changes)
 
-Promtail mounts the Docker socket and reads JSON log files written by Docker's logging driver for all containers. No sidecar, no log volume, no application changes needed.
+Alloy reads JSON log files written by Docker's logging driver for all containers. For container discovery and labels, it queries Docker metadata through an internal `docker-socket-proxy` service on `obs-net`. No application sidecar and no application-container log changes are needed.
 
 - Python worker emits structured JSON log lines (`level`, `event`, `account`, `message_id`, `action`)
 - mbsync and rclone write to stdout/stderr (captured as-is)
-- Dovecot writes to syslog (Promtail reads via Docker log capture)
+- Dovecot writes to syslog (Alloy reads via Docker log capture)
 
-Labels applied by Promtail: `container`, `account` (parsed from structured lines where present).
+The socket proxy enforces a read-only Docker API allowlist; see `docs/tech-stack.md §Docker socket proxy` for the full policy. Mutating paths remain disabled.
+
+Labels applied by Alloy: `container`, `account` (parsed from structured lines where present).
 
 ### Node Exporter → Prometheus scrape
 
@@ -144,7 +147,8 @@ Grafana must not be exposed anonymously. Email metadata (account names, message 
 - Anonymous access disabled (`allow_sign_up = false`)
 - Admin password set via Docker secret (not the default `admin/admin`)
 - Grafana accessible only within Tailscale network — not on the public VPS IP
-- Consistent with Dovecot: all operator-facing services scoped to Tailscale peers
+- Grafana reachable only from Tailscale peers tagged `tag:admin-device`
+- Consistent with Dovecot: all operator-facing services scoped to explicitly authorized Tailscale peers
 
 ### Internal observability services
 

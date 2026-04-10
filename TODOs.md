@@ -14,10 +14,10 @@ These items are security gaps or procedural errors that could cause data loss or
 
 | ID | Item | Source | Threat | Status | Resolved in |
 |---|---|---|---|---|---|
-| C1 | Recovery runbook missing gocryptfs init + mount step before `rclone copy` — restoring to an unmounted path writes decrypted email to unencrypted disk | `docs/recovery.md §Step 3` | T18 | Open | |
-| C2 | VPS host firewall not defined — no ufw/iptables default-deny rule; observability services could be accidentally port-mapped to the public interface | No doc covers this | T17 | Open | |
-| C3 | Docker socket proxy for Promtail not implemented — Promtail's `/var/run/docker.sock` bind mount gives full Docker API access, bypassing app-net/obs-net segmentation | `docs/tech-stack.md §Docker network segmentation` | T16 | Open | |
-| C4 | Tailscale ACLs not defined — Dovecot port 993 and Tang port 7500 are accessible to any tailnet peer; must restrict to specific nodes only | `docs/architecture.md §6` | T7, T15 | Open | |
+| C1 | Recovery runbook missing gocryptfs init + mount step before `rclone copy` — restoring to an unmounted path writes decrypted email to unencrypted disk | `docs/recovery.md §Step 3` | T18 | Resolved | `docs/recovery.md §Step 3` |
+| C2 | VPS host firewall not defined — no ufw/iptables default-deny rule; observability services could be accidentally port-mapped to the public interface | No doc covers this | T17 | Resolved | `docs/architecture.md §VPS host firewall` |
+| C3 | Docker socket proxy for Promtail not implemented — Promtail's `/var/run/docker.sock` bind mount gives full Docker API access, bypassing app-net/obs-net segmentation | `docs/tech-stack.md §Docker network segmentation` | T16 | Resolved | `docs/tech-stack.md §Docker socket proxy` |
+| C4 | Tailscale ACLs not defined — Dovecot port 993 and Tang port 7500 are accessible to any tailnet peer; must restrict to specific nodes only | `docs/architecture.md §6` | T7, T15 | Resolved | `docs/architecture.md §Tailscale ACL matrix` |
 
 ---
 
@@ -34,7 +34,8 @@ These items are security gaps or procedural errors that could cause data loss or
 | H7 | rclone and rsnapshot Ofelia schedule intervals never defined — operations.md references them but gives no interval | `docs/operations.md §3` | — | Open | |
 | H8 | B2/R2 bucket public-access block procedure not documented — required by T8 but no step-by-step in any doc | `docs/threat-model.md §T8` | T8 | Open | |
 | H9 | CI `validate-configs` job does not lint Compose file for `0.0.0.0` port bindings on observability service ports — currently only checks YAML validity | `docs/cicd.md §validate-configs` | T17 | Open | |
-| H10 | Promtail container Linux capabilities not specified — `cap_drop: ALL` should be set but is absent from docs | `docs/threat-model.md §T16` | T16 | Open | |
+| H10 | Alloy container Linux capabilities not specified — `cap_drop: ALL` should be set but is absent from docs | `docs/threat-model.md §T16` | T16 | Open | |
+| H11 | Promtail reached end-of-life on March 2, 2026 — replaced with Grafana Alloy (official successor) across all docs | `docs/observability.md §Stack Decision` | T16 | Resolved | `docs/observability.md`, `docs/tech-stack.md`, `docs/threat-model.md` |
 
 ---
 
@@ -82,5 +83,5 @@ Items that are referenced in docs as if they exist, or that are clearly needed b
 | P1 | `python scripts/oauth2_setup.py` — referenced in operations.md as if it exists; not documented or implemented | `docs/operations.md §1` | Open | |
 | P2 | Manifest DB rebuild maintenance script — mentioned in recovery.md Fallback as "implemented at implementation time" | `docs/recovery.md §Fallback` | Open | |
 | P3 | mbsync UID cache corruption recovery — a common Maildir ingest failure mode with no documented resolution procedure | — | Open | |
-| P4 | Recovery pre-condition check: explicit step to verify gocryptfs is mounted before `rclone copy` begins | `docs/recovery.md` (T18) | Open | |
+| P4 | Recovery pre-condition check: explicit step to verify gocryptfs is mounted before `rclone copy` begins | `docs/recovery.md` (T18) | Resolved | `docs/recovery.md §Step 3` |
 | P5 | Tailscale admin console monitoring for unexpected nodes — T7 flags this as a control but no procedure exists | `docs/threat-model.md §T7` | Open | |

@@ -17,7 +17,7 @@
 | Manifest DB | **SQLite** | Sufficient for email volume on a single-server deployment; no external DB process needed |
 | Secrets | **Docker secrets** | Native to Docker Compose; age-encrypted files for secrets at rest on disk |
 | Base images | **Alpine Linux** | Minimal footprint; mbsync and Python 3 both available via apk |
-| Logging | **stdout/stderr → Docker JSON log driver → Promtail → Loki** | Promtail reads Docker JSON log files; no container changes needed |
+| Logging | **stdout/stderr → Docker JSON log driver → Alloy → Loki** | Grafana Alloy (Promtail's supported successor) reads Docker JSON log files and uses Docker metadata through a socket proxy; no application container changes needed |
 | Metrics | **Prometheus + Pushgateway** | Daemons expose scrape endpoints; ephemeral containers (mbsync, rclone) push on exit via Pushgateway |
 | Dashboards | **Grafana** | Queries both Prometheus (metrics) and Loki (logs) as datasources |
 | Alerting | **Alertmanager** | Routes to email (critical) and Slack/Discord webhook (all severities) |
@@ -55,11 +55,14 @@
 │  ┌──────────┐  ┌──────┐  ┌──────────┐  ┌───────────┐  │
 │  │prometheus│  │ loki │  │ grafana  │  │alertmanagr│  │
 │  └──────────┘  └──────┘  └──────────┘  └───────────┘  │
-│  ┌──────────┐  ┌──────────────┐                        │
-│  │promtail  │  │ pushgateway  │  ┌───────────────┐     │
-│  │(log ship)│  │(ephemeral    │  │ node-exporter │     │
-│  └──────────┘  │ job metrics) │  └───────────────┘     │
-│                └──────────────┘                         │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────┐         │
+│  │  alloy   │  │docker-   │  │ pushgateway  │         │
+│  │(log ship)│  │socket-   │  │(ephemeral    │         │
+│  │          │  │proxy)    │  │ job metrics) │         │
+│  └──────────┘  └──────────┘  └──────────────┘         │
+│                                  ┌───────────────┐     │
+│                                  │ node-exporter │     │
+│                                  └───────────────┘     │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -81,7 +84,8 @@ gocryptfs is a FUSE filesystem. FUSE mounts exist in the kernel's mount namespac
 | `ofelia` | Long-running scheduler | Compose `up` |
 | `prometheus` | Long-running daemon | Compose `up` |
 | `loki` | Long-running daemon | Compose `up` |
-| `promtail` | Long-running daemon | Compose `up`; mounts Docker socket |
+| `alloy` | Long-running daemon | Compose `up`; uses Docker socket proxy for metadata discovery |
+| `docker-socket-proxy` | Long-running daemon | Compose `up`; sole container mounting `/var/run/docker.sock` |
 | `grafana` | Long-running daemon | Compose `up` |
 | `alertmanager` | Long-running daemon | Compose `up` |
 | `pushgateway` | Long-running daemon | Compose `up` |
@@ -106,11 +110,29 @@ All containers must not share a single flat network. A compromised observability
 
 ```
 app-net:   mbsync, dovecot, worker, rclone, tailscale, ofelia, pushgateway
-obs-net:   prometheus, loki, grafana, alertmanager, promtail, node-exporter, pushgateway
+obs-net:   prometheus, loki, grafana, alertmanager, alloy, docker-socket-proxy, node-exporter, pushgateway
 both:      worker  (exposes /metrics to obs-net; accesses Maildir on app-net)
 ```
 
 Pushgateway bridges both networks — mbsync/rclone push to it on `app-net`; Prometheus scrapes it on `obs-net`.
+
+### Docker socket proxy
+
+Alloy needs Docker metadata for container discovery and labeling, but mounting `/var/run/docker.sock` directly gives it host-level Docker control. The stack therefore inserts a dedicated `docker-socket-proxy` container in front of the Docker socket.
+
+Policy for the proxy:
+- Use `tecnativa/docker-socket-proxy`, pinned by digest
+- Attach it only to `obs-net`
+- Do not publish any host port
+- The proxy is the only container that bind-mounts `/var/run/docker.sock`
+- Alloy connects to the proxy's internal TCP endpoint on `obs-net`, not to the Unix socket directly
+
+Allowed Docker API surface:
+- Read-only metadata and discovery only: `PING`, `VERSION`, `EVENTS`, `INFO`, `CONTAINERS`, and `NETWORKS`
+- `POST=0`
+- Disable mutating and control paths including `EXEC`, `ALLOW_START`, `ALLOW_STOP`, `ALLOW_RESTARTS`, and any other non-required API groups
+
+This preserves Alloy's current labeling goal while removing its direct root-equivalent control path to the Docker host.
 
 ### Image digest pinning
 
