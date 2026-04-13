@@ -48,6 +48,51 @@ This document covers routine day-to-day operations. For disaster recovery (full 
 
 ## 2. Rotating OAuth2 Tokens or App Passwords
 
+### 2a. Emergency token revocation (suspected compromise)
+
+Use this procedure when a token or app password may have been leaked — for example, after a VPS breach, unexpected provider-side email access, or accidental credential logging. **Revoke on the provider side first**, then rotate the Docker secret using the steps below.
+
+**Gmail**
+
+1. Sign in to the account at `myaccount.google.com`.
+2. Go to **Security → Third-party apps with account access**.
+3. Find the mailarchiver / mbsync OAuth2 app entry and select **Remove Access**.
+4. Confirm removal. The refresh token and all access tokens derived from it are immediately invalidated.
+
+**Outlook / Microsoft (personal account)**
+
+1. Sign in at `account.microsoft.com`.
+2. Go to **Privacy → Apps and services that can access your data**.
+3. Find the mailarchiver app and select **Remove these permissions**.
+
+**Outlook / Microsoft (organizational / Azure AD account)**
+
+1. An administrator must sign in to the Azure portal.
+2. Navigate to **Azure Active Directory → Enterprise Applications**.
+3. Find the mailarchiver app registration and select **Permissions → Revoke admin consent**, or disable the application.
+
+**Yahoo (app-specific password)**
+
+Yahoo uses app-specific passwords, not OAuth2 refresh tokens. Revocation is immediate once the app password is deleted:
+
+1. Sign in to the Yahoo account.
+2. Go to **Account Security → Generate and manage app passwords**.
+3. Delete the mailarchiver entry.
+
+**Verification**
+
+After revoking on the provider side, confirm the old credential is dead before creating a new one:
+
+```
+docker compose exec mbsync mbsync --list <account>
+```
+
+The command should return an authentication error. If it still succeeds, the provider-side revocation has not yet propagated — wait a few minutes and retry.
+
+**Next step:** proceed with the standard rotation steps below to issue a new credential and update the Docker secret.
+
+---
+
 ### OAuth2 token refresh
 
 1. Re-run the device authorization flow:
@@ -101,11 +146,9 @@ for r in rows: print(r)
 
 Or check the Grafana metric `mailarchiver_backup_last_verified_timestamp_seconds{destination}`.
 
-### Local backup server: rsnapshot target handling
+### Local rsnapshot copy
 
-The backup server's rsnapshot target has its own gocryptfs passphrase, Tang binding, and age-encrypted fallback record — separate key material from the primary VPS. The mount lifecycle (mount before rsnapshot, `findmnt` verification, unmount after, fail-closed on Tang unavailability) is defined in `docs/architecture.md §Local rsnapshot backup`.
-
-If Tang is unavailable, the normal rsnapshot run must stop. Use the age-escrowed fallback only for manual emergency access, then unmount the plaintext target immediately after.
+rsnapshot runs on the primary VPS via host cron. It snapshots the gocryptfs ciphertext directories (`maildir-cipher` and `manifest-db-cipher`) directly — no separate mount or unlock step is required. The snapshot tree is always ciphertext; no plaintext is written to the snapshot directory. See `docs/architecture.md §Local rsnapshot backup` for the retention schedule and recovery procedure.
 
 ---
 

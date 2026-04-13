@@ -24,18 +24,18 @@ The system is designed around these major components:
 1. `mbsync` / isync for ingest from Gmail, Outlook, Yahoo, and other providers
 2. Maildir on a primary VPS as the permanent archive
 3. Dovecot serving the archive over IMAPS to authorized Tailscale peers, with per-user OIDC/OAuth2 login via XOAUTH2/OAUTHBEARER
-4. Local rsnapshot backup on a separate local server over Tailscale, stored only inside its own gocryptfs-encrypted target
+4. Local rsnapshot backup on the primary VPS, snapshotting the gocryptfs ciphertext directories
 5. Offsite encrypted backups to Backblaze B2 and Cloudflare R2
 6. A Python deletion worker with a SQLite manifest DB gating provider-side deletion
 7. Observability via Prometheus, Loki, Grafana, Alertmanager, Grafana Alloy, Docker socket proxy, Pushgateway, and Node Exporter
-8. At-rest encryption via gocryptfs + Clevis/Tang, with distinct bindings and escrow records for the primary VPS and backup server, and Tang hosted on a secondary VPS
+8. At-rest encryption via gocryptfs + Clevis/Tang on the primary VPS, with Tang hosted on a secondary VPS
 
 ## Current Design Boundaries
 
 - Dovecot login is defined: external OIDC/OAuth2, IMAP via XOAUTH2/OAUTHBEARER, one identity per human user
 - Dovecot archive authorization is not yet defined: do not invent per-user namespace visibility, ownership, or sharing rules unless the task explicitly adds them
 - Writable IMAP semantics are not yet defined: do not assume deletes, moves, appends, folder creation, or flag changes are already reconciled with the manifest, backups, or deletion worker
-- Tang clients are limited to the primary VPS and backup server; keep any new Tang-related guidance consistent with that ACL model
+- Tang clients are limited to the primary VPS only; keep any new Tang-related guidance consistent with that ACL model
 
 ## Documentation Map
 

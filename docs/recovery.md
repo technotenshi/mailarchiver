@@ -32,7 +32,7 @@ Before provisioning anything:
 
 - Same OS (Ubuntu), same architecture as the original
 - Install Docker Engine and Docker Compose v2
-- Install Tailscale and authenticate to the same tailnet (this restores connectivity to the local rsnapshot server and the Tang VPS)
+- Install Tailscale and authenticate to the same tailnet (this restores connectivity to the Tang VPS)
 - Install `gocryptfs`, `clevis-tang`, and `age`
 - Verify Tang server (secondary VPS) is reachable over Tailscale before proceeding — all gocryptfs mounts depend on it
 - If Tang is unreachable, stop here. Do not run `rclone copy` until Tang connectivity is restored and the host-level gocryptfs mounts are working.

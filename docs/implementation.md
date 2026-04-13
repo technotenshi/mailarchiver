@@ -78,8 +78,8 @@ Tests live in `worker/tests/`. The CI `lint-and-test` job runs `pytest` — no c
 
 | # | Task | Done when | Status |
 |---|---|---|---|
-| 1.1 | Tailscale mesh connects all three nodes (primary VPS, secondary VPS, local server) | `tailscale ping` succeeds between all three nodes | Pending |
-| 1.2 | Tang server operational on secondary VPS and reachable only from the primary VPS and backup server over Tailscale | From the primary VPS and backup server, `curl http://<tang-tailscale-ip>:7500/adv` returns a JOSE JWK response; from a different Tailscale peer, the connection is refused | Pending |
+| 1.1 | Tailscale mesh connects both nodes (primary VPS and secondary VPS) | `tailscale ping` succeeds between both nodes | Pending |
+| 1.2 | Tang server operational on secondary VPS and reachable only from the primary VPS over Tailscale | From the primary VPS, `curl http://<tang-tailscale-ip>:7500/adv` returns a JOSE JWK response; from any other Tailscale peer, the connection is refused | Pending |
 | 1.3 | gocryptfs volumes initialized on primary VPS with Clevis/Tang binding; fallback age passphrase escrowed in password manager | Both cipher directories exist; `clevis decrypt < tang-binding.jwe` succeeds; passphrase stored in password manager | Pending |
 | 1.4 | `gocryptfs-mount.service` mounts both volumes automatically at boot (`Before=docker.service`) | After reboot: `mount \| grep gocryptfs` shows both mounts; `systemctl status gocryptfs-mount.service` shows active (exited) | Pending |
 | 1.5 | Primary and Tang VPS hardening baselines applied | Primary VPS: password SSH rejected; SSH hardening per `H4`; unattended-upgrades enabled; deploy user remains `docker`-only. Tang VPS: password SSH rejected; SSH hardening per `H4`; unattended-upgrades enabled | Pending |
@@ -143,7 +143,7 @@ See `docs/architecture.md §6` for Dovecot TLS, ACL, and authentication requirem
 | 6.1 | B2 and R2 buckets created with object versioning enabled and public access blocked | Versioning confirmed via cloud console; a deleted object is retained as a previous version | Pending |
 | 6.2 | rclone crypt remotes configured for B2 and R2; passphrase escrowed in password manager | `rclone lsd b2-crypt:` and `rclone lsd r2-crypt:` succeed; passphrase recorded in password manager | Pending |
 | 6.3 | rclone sync job transfers Maildir and manifest-db to B2 and R2 with successful check | `rclone check b2-crypt:maildir /var/lib/mailarchiver/maildir` exits 0 with no missing files | Pending |
-| 6.5 | rsnapshot pulls Maildir and manifest-db into a verified gocryptfs mount on the backup server over Tailscale via `rsync` over SSH on `SSH_PORT` | Separate local-backup Tang binding and age-escrowed fallback exist; `findmnt -T <rsnapshot-target>` shows the expected gocryptfs mount before rsnapshot writes; snapshot completes successfully; target is unmounted after the run | Pending |
+| 6.5 | rsnapshot runs on the primary VPS and snapshots the gocryptfs ciphertext dirs | Host cron triggers `rsnapshot hourly`; snapshot directory contains `maildir-cipher` and `manifest-db-cipher` subtrees; `rsnapshot configtest` exits 0; a completed snapshot appears under the configured snapshot root | Pending |
 
 See `docs/architecture.md §1` and `docs/architecture.md §Local rsnapshot backup` for rclone crypt configuration, local-backup encryption, and passphrase escrow.
 

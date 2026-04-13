@@ -62,9 +62,9 @@ account_policy
   hold_all          — boolean, blocks all deletions for this account
 ```
 
-### Why three tables
+### Why four tables
 
-The original two-table schema collapsed `messages` and `provider_copies` into one row, making it impossible to represent the same message appearing in multiple provider accounts. Separating them allows each provider copy to be tracked and deleted independently.
+The original two-table schema collapsed `messages` and `provider_copies` into one row, making it impossible to represent the same message appearing in multiple provider accounts. Separating them allows each provider copy to be tracked and deleted independently. A third table (`backup_verifications`) tracks per-destination backup status independently of the provider copy it belongs to. A fourth table (`account_policy`) stores per-account retention overrides, keeping policy configuration out of the application layer.
 
 ### Message-ID as primary key
 
@@ -250,6 +250,8 @@ Required before deployment on the primary Docker host:
 - Unattended security upgrades enabled on the VPS OS
 - Deploy SSH user is in the `docker` group only — no sudo, no system access
 
+The specific SSH port value and fail2ban configuration thresholds are managed by the infrastructure Ansible project. This section defines the requirement; the Ansible project owns the values.
+
 ### VPS host firewall
 
 **Decision: UFW on the Ubuntu host, with persistent Docker filtering in `DOCKER-USER`**
@@ -296,26 +298,24 @@ The tailnet policy is defined in terms of stable role tags rather than hostnames
 
 - `tag:primary-vps`
 - `tag:tang-vps`
-- `tag:backup-server`
 - `tag:mail-client`
 - `tag:admin-device`
 
 Allowed Tailscale flows:
 - `tag:mail-client -> tag:primary-vps:993` for Dovecot IMAPS only
 - `tag:admin-device -> tag:primary-vps:3000` for Grafana only
-- `tag:backup-server -> tag:primary-vps:SSH_PORT` for rsnapshot pull via `rsync` over SSH
 - `tag:primary-vps -> tag:tang-vps:7500` for Clevis/Tang only
-- `tag:backup-server -> tag:tang-vps:7500` for backup-server Clevis/Tang unlocks only
-- `tag:admin-device -> tag:backup-server:SSH_PORT` for backup-server administration
 
 All other Tailscale service access is denied by default.
 
 Clarifications:
-- The local backup server is not a Dovecot client and does not need access to `993`
 - Grafana is not open to arbitrary tailnet peers; only `tag:admin-device` may reach `3000`
-- The backup path is SSH-based `rsync`, not a native `rsyncd` port
 - These ACLs complement the host firewall; they do not replace it
-- Exact Tailscale policy JSON syntax, tag-owner rules, device approval, and admin-console monitoring procedures are defined separately
+- Exact Tailscale policy JSON syntax and tag-owner rules are defined in the tailnet admin console
+
+Tailscale account security controls:
+- **Device approval** — enforced via node key signing, configured in the tailnet admin console
+- **Tailnet admin account MFA** — provided by AWS Cognito, configured in the infrastructure Ansible project
 
 ### Container restart policies
 
@@ -352,7 +352,7 @@ All long-running containers must be configured with `restart: unless-stopped` in
 │                                              ▼  │
 │  ┌─────────────────────────────────────────────┐│
 │  │  rclone sync (crypt overlay)                ││
-│  │  → Tailscale VPN → Local rsnapshot          ││
+│  │  → Local rsnapshot (ciphertext, same VPS)    ││
 │  │  → Backblaze B2 (encrypted, versioned)      ││
 │  │  → Cloudflare R2 (encrypted, versioned)     ││
 │  └─────────────────────────────────────────────┘│
@@ -399,12 +399,7 @@ Primary VPS disk imaged offline:
 
 Tang is extremely lightweight — it is a small daemon serving JOSE key-agreement responses. It requires no persistent storage of keys or client state. A minimal VPS instance (512 MB RAM, 1 vCPU) is sufficient.
 
-The Tang server is added to the Tailscale tailnet. Only the primary VPS and backup server are allowed Tang clients. The primary VPS contacts it at startup (and during periodic re-binding); the backup server contacts it only to unlock the local rsnapshot gocryptfs target immediately before a snapshot run. The Tang server holds no email data.
-
-**Advantages over Tang on the local backup server:**
-- Always-on cloud availability (local server may be off or hibernated)
-- Separate failure domain from the primary VPS
-- No dependency on local server for VPS startup
+The Tang server is added to the Tailscale tailnet. Only the primary VPS is allowed to contact Tang. The primary VPS contacts it at startup and during periodic re-binding. The Tang server holds no email data.
 
 #### Tang VPS hardening baseline
 
@@ -436,23 +431,29 @@ At-rest encryption is specifically a disk-image / physical access threat mitigat
 
 ### Local rsnapshot backup
 
-**Decision: local rsnapshot copy encrypted with gocryptfs + Clevis/Tang**
+**Decision: rsnapshot on the primary VPS, snapshotting the gocryptfs ciphertext directories**
 
-The local backup server receives a plaintext rsync of `maildir` and `manifest-db` over Tailscale, but rsnapshot must write only into a plaintext target that is itself backed by a local gocryptfs ciphertext directory. The local backup copy is therefore encrypted at rest on the backup server even though rsnapshot operates on plaintext files during the snapshot window.
+rsnapshot runs on the primary VPS itself via host cron. It snapshots the gocryptfs ciphertext directories (`maildir-cipher` and `manifest-db-cipher`) directly — not the decrypted mounts. This means:
 
-The backup-server gocryptfs layer has its own key material:
-- a separate gocryptfs passphrase from the primary VPS
-- a separate Clevis/Tang binding
-- a separate age-encrypted escrowed fallback record
+- Snapshot files are always ciphertext; no plaintext is written to the snapshot tree
+- No separate gocryptfs layer, Tang binding, or key material needed — the same passphrase that unlocks the live data also decrypts the snapshot files
+- Hardlink-based deduplication works correctly because both the ciphertext source and the rsnapshot destination reside on the same host filesystem
+- No mount/unmount lifecycle required; rsnapshot reads only from already-existing ciphertext dirs
 
-The backup-server mount lifecycle is job-scoped:
-- mount the plaintext rsnapshot target immediately before the rsnapshot job
-- verify the mount with `findmnt -T <rsnapshot-target>`
-- run rsnapshot only after the mount check confirms the expected gocryptfs target
-- unmount the plaintext target after the snapshot completes
-- fail closed if Tang is unavailable or the mount verification fails
+**Paths:**
 
-This keeps the local snapshot tree encrypted at rest when the backup server is idle. Normal rsnapshot runs must not write to an unmounted plaintext path.
+- Ciphertext sources: `/var/lib/mailarchiver/maildir-cipher/` and `/var/lib/mailarchiver/manifest-db-cipher/`
+- Snapshot root: `/var/lib/mailarchiver/rsnapshot/`
+
+**Retention schedule (host cron):**
+
+| Level | Cron expression | Retain |
+|---|---|---|
+| hourly | `0 */4 * * *` (every 4 hours) | 6 snapshots (~24 h) |
+| daily | `0 23 * * *` | 7 snapshots |
+| weekly | `0 22 * * 0` (Sunday) | 4 snapshots |
+
+**Recovery:** to restore from an rsnapshot snapshot, copy the desired ciphertext files from `/var/lib/mailarchiver/rsnapshot/` back to `maildir-cipher`, then decrypt with the same gocryptfs passphrase (see `docs/recovery.md`).
 
 ### Startup sequence
 
@@ -500,7 +501,7 @@ The systemd ordering guarantees that if `gocryptfs-mount.service` fails, Docker 
 ## Resolved Decisions
 
 - **Ingest tool** — mbsync (isync). See `docs/tech-stack.md`.
-- **Deduplication** — three-table manifest schema; `Message-ID` as deduplication key; per-account Maildir namespaces; independent deletion per provider copy. See §2.
+- **Deduplication** — four-table manifest schema; `Message-ID` as deduplication key; per-account Maildir namespaces; independent deletion per provider copy. See §2.
 - **Observability stack** — Prometheus + Loki + Grafana + Alertmanager. See `docs/observability.md`.
 - **Resilience gaps** — external heartbeat, B2/R2 object versioning, manifest DB backup + WAL, ingest overlap prevention, passphrase escrow, Dovecot network scope, restart policies, RPO/RTO. See §6 and `docs/recovery.md`.
 - **At-rest encryption** — gocryptfs on Maildir + manifest DB, passphrase derived via Clevis + Tang on secondary VPS over Tailscale. See §7.

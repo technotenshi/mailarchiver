@@ -23,7 +23,7 @@ Ranked by impact of loss or compromise:
 | Compromised dependency | Malicious code in Docker image or Python package | Exfiltration, persistence, pivoting |
 | Compromised CI/CD | Control over deployment pipeline | VPS access, malicious image deployment |
 | Cloud storage provider | Read access to stored objects | Surveillance (mitigated by rclone crypt) |
-| Physical attacker | Access to local backup server hardware | Unencrypted Maildir exposure |
+| Physical attacker | Access to primary VPS disk | Ciphertext-only exposure (rsnapshot copy is always ciphertext; live data protected by gocryptfs) |
 | Misconfiguration / self | Accidental operator action | Data loss, credential exposure |
 
 ---
@@ -43,7 +43,6 @@ flowchart LR
 
     subgraph Tailscale["Tailscale network"]
         clients["Mail clients"]
-        local["Local server\n(rsnapshot)"]
     end
 
     subgraph VPS["VPS"]
@@ -75,7 +74,6 @@ flowchart LR
     alertmanager -->|"HTTPS"| slack
 
     clients -->|"IMAPS / 993"| dovecot
-    local -->|"rsync"| host
 ```
 
 ---
@@ -91,7 +89,7 @@ flowchart LR
 | Mitigation | Severity | Status |
 |---|---|---|
 | Disable SSH password authentication; key-only | Critical | Not yet defined |
-| SSH on non-standard port or port-knock; fail2ban | High | Not yet defined |
+| SSH on non-standard port or port-knock; fail2ban | High | Defined in docs/architecture.md §Primary VPS hardening baseline |
 | Deploy SSH user is least-privilege (docker group only, no sudo) | High | Defined in cicd.md |
 | Minimize public attack surface: only Dovecot exposed, and only to Tailscale | High | Defined in architecture.md |
 | Unattended security upgrades on VPS OS | High | Not yet defined |
@@ -109,10 +107,10 @@ flowchart LR
 |---|---|---|
 | gocryptfs AES-256-GCM on `/maildir` and `/manifest-db` — ciphertext at rest, decrypted only while VPS is running | High | Defined in architecture.md §7 |
 | Tang server on secondary VPS — passphrase derived via JOSE ECDH; never stored on primary disk; never transmitted in plaintext | High | Defined in architecture.md §7 |
-| Per-file random IVs in gocryptfs — file-level isolation; compromise of one file's ciphertext does not expose key material for others | Medium | Inherent to gocryptfs |
+| Per-file random IVs in gocryptfs — file-level isolation; compromise of one file's ciphertext does not expose key material for others | Medium | Accept |
 | File name encryption enabled — leaks no folder/account structure at filesystem level | Medium | Defined in architecture.md §7 |
 | Fallback binding: age-encrypted passphrase escrowed in password manager (manual mount if Tang unreachable) | Medium | Defined in architecture.md §7 |
-| Local rsnapshot copy: gocryptfs on backup server with separate Tang binding and fallback escrow | Medium | Defined in docs/architecture.md §Local rsnapshot backup |
+| Local rsnapshot copy: snapshots the gocryptfs ciphertext dirs — always ciphertext, no separate key material required | Medium | Defined in docs/architecture.md §Local rsnapshot backup |
 
 **Residual risk:** A live VPS compromise (attacker has shell) still has access to the mounted plaintext. gocryptfs is a disk-image threat mitigator, not a live-compromise mitigator. VPS hardening (T1) remains the primary defense against live access.
 
@@ -128,10 +126,10 @@ flowchart LR
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| OAuth2 scopes minimized: request only what is needed (see T4) | High | Needs review — see T4 |
+| OAuth2 scopes minimized: request only what is needed (see T4) | High | Not yet defined — gap |
 | Tokens stored as Docker secrets (tmpfs, never written to disk) | High | Defined in architecture.md |
-| Never log OAuth2 tokens or Authorization headers | High | Implementation requirement |
-| Documented token revocation procedure (per provider) | Medium | Not yet defined |
+| Never log OAuth2 tokens or Authorization headers | High | Not yet defined |
+| Documented token revocation procedure (per provider) | Medium | Defined in docs/operations.md §2a |
 | Periodic OAuth2 token rotation (re-authorize on a schedule) | Medium | Not yet defined |
 
 ---
@@ -160,8 +158,8 @@ flowchart LR
 |---|---|---|
 | **Pin all off-the-shelf images by digest** (`image@sha256:...`), not by tag | Critical | Defined in docs/tech-stack.md §Image digest pinning |
 | **Trivy scan off-the-shelf images** in CI alongside custom images | High | Defined in docs/cicd.md §build-and-scan |
-| Use Renovate/Dependabot to track digest updates (opens PR when upstream digest changes) | High | Defined in cicd.md — extend to digest pinning |
-| Prefer images from official namespaces (e.g. `prom/prometheus`, `grafana/grafana`) over community variants | Medium | Implementation guidance |
+| Use Renovate/Dependabot to track digest updates (opens PR when upstream digest changes) | High | Defined in cicd.md |
+| Prefer images from official namespaces (e.g. `prom/prometheus`, `grafana/grafana`) over community variants | Medium | Not yet defined |
 | Docker Content Trust / Cosign signature verification for custom images | Medium | Not yet defined |
 
 ---
@@ -191,9 +189,9 @@ flowchart LR
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| **Define Tailscale ACL matrix**: `tag:mail-client -> tag:primary-vps:993`, `tag:admin-device -> tag:primary-vps:3000`, `tag:backup-server -> tag:primary-vps:SSH_PORT`, `tag:admin-device -> tag:backup-server:SSH_PORT`; deny other Tailscale service access by default | High | Defined in docs/architecture.md §Tailscale ACL matrix |
-| Enable Tailscale device approval: new devices require explicit admin approval before joining tailnet | High | Not yet defined |
-| Enable Tailscale MFA on the tailnet admin account | High | Not yet defined |
+| **Define Tailscale ACL matrix**: `tag:mail-client -> tag:primary-vps:993`, `tag:admin-device -> tag:primary-vps:3000`, `tag:primary-vps -> tag:tang-vps:7500`; deny other Tailscale service access by default | High | Defined in docs/architecture.md §Tailscale ACL matrix |
+| Enable Tailscale device approval: new devices require explicit admin approval before joining tailnet | High | Defined in docs/architecture.md §Tailscale ACL matrix |
+| Enable Tailscale MFA on the tailnet admin account | High | Defined in docs/architecture.md §Tailscale ACL matrix |
 | Dovecot authentication provides a second layer of access control for IMAP access even for authorized Tailscale peers | Medium | Defined in docs/architecture.md §Dovecot network exposure |
 | Monitor Tailscale admin console for unexpected nodes | Low | Not yet defined |
 
@@ -217,16 +215,15 @@ flowchart LR
 
 ### T9 — Local Backup Exposure
 
-**Impact:** Physical access to the backup server's disk, or shell access while the local snapshot target is mounted, can expose the local backup copy.
+**Impact:** Physical access to the primary VPS disk exposes the rsnapshot copy; shell access on a live VPS exposes both the mounted Maildir and the snapshot tree.
 
-**Current design:** B2 and R2 are encrypted by rclone crypt. The local rsnapshot copy is also encrypted at rest on the backup server: rsnapshot writes only into a job-scoped gocryptfs plaintext target backed by a local ciphertext directory and unlocked via Clevis/Tang.
+**Current design:** rsnapshot runs on the primary VPS and snapshots the gocryptfs ciphertext directories (`maildir-cipher`, `manifest-db-cipher`). The snapshot tree is always ciphertext — no separate gocryptfs layer or Tang binding is needed. Physical disk access yields only ciphertext, recoverable only with the gocryptfs passphrase. Live VPS shell access is addressed by T1 (VPS hardening).
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| gocryptfs on the local rsnapshot target, unlocked via Clevis/Tang, with separate age-encrypted fallback escrow | High | Defined in docs/architecture.md §Local rsnapshot backup |
-| rsnapshot directory: readable only by the rsnapshot user (filesystem permissions) | Medium | Not yet defined |
-| Access to local server itself only via Tailscale (same ACL controls as VPS access) | Medium | Not yet defined |
-| Accept residual risk: local snapshot plaintext is accessible while the job-scoped target is mounted | — | Documented residual risk after T9 controls |
+| rsnapshot snapshots ciphertext dirs only — snapshot tree is always encrypted at rest | High | Defined in docs/architecture.md §Local rsnapshot backup |
+| rsnapshot snapshot directory: readable only by the rsnapshot user (filesystem permissions) | Medium | Not yet defined |
+| Accept residual risk: live VPS shell access exposes the mounted Maildir and snapshot ciphertext simultaneously (same host) — primary mitigation is T1 VPS hardening | — | Accept |
 
 ---
 
@@ -259,8 +256,8 @@ both:      worker (metrics bridge)
 
 | Mitigation | Severity | Status |
 |---|---|---|
-| Restrict Pushgateway to `app-net` — only mbsync and rclone can reach it | Medium | Requires T10 network segmentation |
-| Prometheus alerting rules should cross-reference manifest DB state (worker metrics) independently of Pushgateway values | Medium | Implementation requirement for worker |
+| Restrict Pushgateway to `app-net` — only mbsync and rclone can reach it | Medium | Defined in docs/tech-stack.md §Docker network segmentation |
+| Prometheus alerting rules should cross-reference manifest DB state (worker metrics) independently of Pushgateway values | Medium | Not yet defined |
 | Consider Pushgateway `--web.enable-admin-api=false` to prevent arbitrary job deletion | Low | Not yet defined |
 
 ---
@@ -299,7 +296,7 @@ both:      worker (metrics bridge)
 | Mitigation | Severity | Status |
 |---|---|---|
 | Define Docker resource limits (`mem_limit`, `cpus`) per container in Compose | Medium | Defined in docs/tech-stack.md §Container resource limits |
-| Loki and Prometheus retention limits prevent unbounded disk growth | Medium | Partially defined (retention periods deferred) |
+| Loki and Prometheus retention limits prevent unbounded disk growth | Medium | Not yet defined |
 | `MaildirDiskPressure` alert already covers disk exhaustion | — | Defined in observability.md |
 
 ---
@@ -314,7 +311,7 @@ both:      worker (metrics bridge)
 |---|---|---|
 | Apply the same VPS hardening baseline to Tang server: SSH key-only, fail2ban, unattended security upgrades | High | Defined in docs/architecture.md §Tang VPS hardening baseline |
 | Tang must not be reachable from the public internet — bind to Tailscale interface only | High | Not yet defined |
-| Tailscale ACLs must restrict which nodes can reach Tang's port — primary VPS and backup server only | High | Defined in docs/architecture.md §Tailscale ACL matrix |
+| Tailscale ACLs must restrict which nodes can reach Tang's port — primary VPS only | High | Defined in docs/architecture.md §Tailscale ACL matrix |
 | Monitor Tang server uptime independently; alert if unreachable before a planned VPS restart | Medium | Not yet defined |
 | Fallback procedure for Tang unavailability (age-encrypted passphrase escrow) | Medium | Defined in docs/architecture.md §7 + docs/operations.md §7 |
 
@@ -375,6 +372,6 @@ both:      worker (metrics bridge)
 | Risk | Rationale |
 |---|---|
 | Primary Maildir readable on a live compromised VPS while gocryptfs is mounted | At-rest encryption protects disk images and offline snapshots, not an attacker who already has shell or process access to the running host. |
-| Local backup plaintext visible while the rsnapshot target is mounted | The backup-server gocryptfs target is mounted only for snapshot runs or manual emergency access, but compromise during that window still exposes plaintext. |
+| rsnapshot copy on same VPS as live data | rsnapshot runs on the primary VPS; a full VPS compromise exposes both the mounted Maildir and the snapshot ciphertext simultaneously. Offsite copies (B2, R2) remain independent. |
 | Tailscale vendor dependency | If Tailscale is compromised at the vendor level, the VPN trust model fails. Mitigated by Dovecot authentication as a second layer. |
 | rclone crypt passphrase is a single key for all offsite data | Passphrase escrow requirement addresses loss; compromise requires immediate re-encryption of all backups. |

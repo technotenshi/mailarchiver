@@ -13,12 +13,12 @@ The system has five layers:
 1. **Email Ingest** — **mbsync (isync)** pulls from providers via IMAP (OAuth2 for Gmail/Outlook, app passwords for others)
 2. **Primary Archive** — Central Maildir store on a cloud/VPS (Copy #1)
 3. **IMAP Service** — Dovecot serves the archive to mail clients
-4. **Local Backup** — rsnapshot repository on a local server (Copy #2), synced via Tailscale VPN
+4. **Local Backup** — rsnapshot of the gocryptfs ciphertext directories on the primary VPS (Copy #2)
 5. **Offsite Backup** — Backblaze B2 and Cloudflare R2, both encrypted (Copies #3 and #4)
 
 A **deletion worker** gates removal of email from provider accounts on successful retention checks and confirmed backup presence across all copies.
 
-Key technical decisions: gocryptfs + Clevis/Tang for at-rest encryption; SQLite manifest DB (three-table schema); Prometheus + Loki + Grafana + Alloy observability stack; Docker Compose v2 on a single VPS; Dovecot with OIDC/OAuth2 (XOAUTH2/OAUTHBEARER) for archive IMAP access.
+Key technical decisions: gocryptfs + Clevis/Tang for at-rest encryption; SQLite manifest DB (four-table schema: messages, provider_copies, backup_verifications, account_policy); Prometheus + Loki + Grafana + Alloy observability stack; Docker Compose v2 on a single VPS; Dovecot with OIDC/OAuth2 (XOAUTH2/OAUTHBEARER) for archive IMAP access.
 
 ## Status
 
@@ -28,7 +28,7 @@ Design documentation phase complete. No implementation exists yet. All architect
 
 | Doc | Covers |
 |---|---|
-| `docs/concept.md` | Mermaid architecture diagram — update when architecture decisions change |
+| `docs/concept.md` | Mermaid architecture diagram — **read-only**; reflects decisions recorded in other docs; update only when those docs change |
 | `docs/architecture.md` | Encryption, deletion worker schema + algorithm, retention policy, error handling, auth, resilience, gocryptfs startup |
 | `docs/tech-stack.md` | Container stack decisions, Docker Compose layout, network segmentation, image pinning |
 | `docs/observability.md` | Metrics, alerts, Grafana/Loki/Prometheus/Alertmanager, external heartbeat |

@@ -10,8 +10,8 @@
 | Scheduling | **Ofelia** | Docker-native job scheduler; triggers container runs on a cron schedule without cron daemons inside containers; `no-overlap: true` on all ingest jobs to prevent concurrent mbsync runs |
 | IMAP server | **Dovecot** | Standard, widely supported; serves the Maildir archive to mail clients |
 | Backup/sync | **rclone** (crypt overlay) | Mirror-style sync preserves per-file granularity needed by the deletion worker for verification |
-| Local backup format | **rsnapshot** on local server | Snapshot-based deduplication over the synced Maildir |
-| VPN | **Tailscale** | Zero-config mesh VPN; runs as a container sidecar on the VPS for encrypted sync to local backup |
+| Local backup format | **rsnapshot** on primary VPS (ciphertext snapshot) | Snapshot-based deduplication of the gocryptfs ciphertext dirs; hardlinks work because source and destination are on the same host filesystem |
+| VPN | **Tailscale** | Zero-config mesh VPN; runs as a container sidecar on the VPS for secure Dovecot client access and Tang connectivity |
 | At-rest encryption | **gocryptfs + Clevis/Tang** | Directory-level AES-256-GCM on Maildir + manifest DB; passphrase derived via ECDH from Tang server at startup; never stored on VPS disk |
 | Tang key server | **Secondary VPS** (lightweight) | Runs Tang daemon; serves JOSE ECDH key-agreement responses; holds no email data; connected via Tailscale |
 | Manifest DB | **SQLite** | Sufficient for email volume on a single-server deployment; no external DB process needed |
@@ -85,7 +85,7 @@ gocryptfs is a FUSE filesystem. FUSE mounts exist in the kernel's mount namespac
 | `mbsync` | Ephemeral | Ofelia (e.g. every 15 min) |
 | `dovecot` | Long-running daemon | Compose `up` |
 | `worker` | Long-running daemon | Compose `up`; polls manifest DB on its own internal schedule |
-| `rclone` | Ephemeral | Ofelia (e.g. every hour) |
+| `rclone` | Ephemeral | Ofelia (every 1 hour) |
 | `tailscale` | Long-running sidecar | Compose `up` |
 | `ofelia` | Long-running scheduler | Compose `up` |
 | `prometheus` | Long-running daemon | Compose `up` |

@@ -10,6 +10,7 @@ flowchart LR
     subgraph VPS["Primary VPS · Docker Compose"]
         mbsync["mbsync\n(ingest · OAuth2)"]
         maildir["Maildir Archive\n(gocryptfs encrypted)\nCopy #1"]
+        snap["rsnapshot\n(ciphertext · local)\nCopy #2"]
         worker["Deletion Worker\n(Python · SQLite)"]
         dovecot["Dovecot\n(IMAPS/993)"]
         obs["Prometheus · Loki\nGrafana · Alertmanager"]
@@ -17,10 +18,6 @@ flowchart LR
 
     subgraph Tang["Secondary VPS"]
         tang["Tang\n(Clevis key server)"]
-    end
-
-    subgraph Local["Local Server"]
-        snap["rsnapshot\nCopy #2"]
     end
 
     subgraph Offsite["Offsite · rclone crypt"]
@@ -37,7 +34,7 @@ flowchart LR
     tang -. "Clevis/Tang ECDH\n(VPS startup)" .-> maildir
     maildir --> dovecot
     dovecot -->|"IMAPS · Tailscale only"| client
-    maildir -->|"Tailscale VPN"| snap
+    maildir --> snap
     maildir -->|"rclone crypt"| B2 & R2
     snap & B2 & R2 --> worker
     worker -->|"delete only after\n90 days + all 3\nbackups confirmed"| Providers

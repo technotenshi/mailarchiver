@@ -36,7 +36,7 @@ If any condition fails, the provider copy is preserved.
 
 - **Ingest** — mbsync (isync) via IMAP; OAuth2 for Gmail/Outlook, app passwords for others
 - **Primary archive** — Maildir on a VPS, encrypted at rest with gocryptfs (passphrase derived at startup via Clevis + Tang on a secondary VPS)
-- **Backups** — Local rsnapshot on an encrypted gocryptfs volume over Tailscale VPN; Backblaze B2 and Cloudflare R2 via rclone crypt (AES-256)
+- **Backups** — Local rsnapshot on the primary VPS (snapshots gocryptfs ciphertext directories); Backblaze B2 and Cloudflare R2 via rclone crypt (AES-256)
 - **IMAP service** — Dovecot with OIDC/OAuth2 login (XOAUTH2/OAUTHBEARER); accessible only to designated Tailscale peers
 - **Deletion worker** — Python daemon with SQLite manifest database
 - **Observability** — Prometheus + Loki + Grafana + Alloy + Alertmanager; external heartbeat via healthchecks.io
@@ -65,8 +65,7 @@ All architectural decisions are documented in `docs/`. The next phase is impleme
 ## Requirements (planned deployment)
 
 - Two VPS instances: primary (Ubuntu, Docker) + secondary (Tang key server, minimal)
-- Local server with rsnapshot for local backup
-- Tailscale account (connects all three nodes)
+- Tailscale account (connects primary VPS and secondary Tang VPS)
 - Backblaze B2 and Cloudflare R2 bucket credentials (bucket-scoped API keys)
 - Gmail and/or Outlook OAuth2 app credentials (device authorization flow)
 - healthchecks.io account (external heartbeat)
